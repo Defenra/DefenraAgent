@@ -41,11 +41,13 @@ type SSL struct {
 }
 
 type Proxy struct {
+	ID         string `json:"id"`
 	Name       string `json:"name"`
-	Protocol   string `json:"protocol"`
-	ListenPort int    `json:"listenPort"`
-	TargetHost string `json:"targetHost"`
-	TargetPort int    `json:"targetPort"`
+	Protocol   string `json:"type"`            // Core sends "type", not "protocol"
+	ListenPort int    `json:"sourcePort"`      // Core sends "sourcePort", not "listenPort"
+	TargetHost string `json:"destinationHost"` // Core sends "destinationHost", not "targetHost"
+	TargetPort int    `json:"destinationPort"` // Core sends "destinationPort", not "targetPort"
+	Enabled    bool   `json:"enabled"`
 }
 
 type PollRequest struct {

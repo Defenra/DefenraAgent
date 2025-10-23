@@ -89,13 +89,19 @@ func (pm *ProxyManager) updateProxies() {
 }
 
 func (pm *ProxyManager) startProxy(proxyConfig config.Proxy) {
+	// Skip if protocol is empty or invalid
+	if proxyConfig.Protocol == "" {
+		log.Printf("[Proxy] Skipping proxy with empty protocol: %s (port: %d)", proxyConfig.Name, proxyConfig.ListenPort)
+		return
+	}
+
 	switch proxyConfig.Protocol {
 	case "tcp":
 		pm.startTCPProxy(proxyConfig)
 	case "udp":
 		pm.startUDPProxy(proxyConfig)
 	default:
-		log.Printf("[Proxy] Unknown protocol: %s", proxyConfig.Protocol)
+		log.Printf("[Proxy] Unknown protocol '%s' for proxy: %s (port: %d)", proxyConfig.Protocol, proxyConfig.Name, proxyConfig.ListenPort)
 	}
 }
 

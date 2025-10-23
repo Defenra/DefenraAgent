@@ -89,8 +89,11 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if qtype == dns.TypeA && len(domainConfig.GeoDNSMap) > 0 {
+	// Use GeoDNS if we have GeoDNS map and this is an A query for the main domain
+	queryName := cleanDomain(question.Name)
+	if qtype == dns.TypeA && len(domainConfig.GeoDNSMap) > 0 && queryName == domainConfig.Domain {
 		atomic.AddUint64(&s.stats.GeoDNSQueries, 1)
+		log.Printf("[DNS] Using GeoDNS for %s (map size: %d)", domain, len(domainConfig.GeoDNSMap))
 		s.handleGeoDNSQuery(w, r, domainConfig, clientIP)
 		return
 	}
@@ -105,19 +108,37 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 
 	clientLocation := "default"
 	if s.geoIP != nil {
-		clientLocation = s.geoIP.GetLocation(clientIP)
+		detectedLocation := s.geoIP.GetLocation(clientIP)
+		if detectedLocation != "" {
+			clientLocation = detectedLocation
+			log.Printf("[DNS] Client %s detected as location: %s", clientIP, clientLocation)
+		}
 	}
 
 	log.Printf("[DNS] GeoDNS Query: %s from %s (location: %s)", domainConfig.Domain, clientIP, clientLocation)
+	log.Printf("[DNS] GeoDNS Map: %+v", domainConfig.GeoDNSMap)
 
 	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
 	if agentIP == "" {
-		log.Printf("[DNS] No agent IP found for location: %s", clientLocation)
-		s.sendNXDOMAIN(w, r)
-		return
+		log.Printf("[DNS] No agent IP found in GeoDNS map for location: %s", clientLocation)
+
+		// Fallback to first A record
+		for _, record := range domainConfig.DNSRecords {
+			if record.Type == "A" {
+				agentIP = record.Value
+				log.Printf("[DNS] Falling back to A record: %s", agentIP)
+				break
+			}
+		}
+
+		if agentIP == "" {
+			log.Printf("[DNS] No A records available for fallback")
+			s.sendNXDOMAIN(w, r)
+			return
+		}
 	}
 
-	log.Printf("[DNS] GeoDNS Response: %s → %s", domainConfig.Domain, agentIP)
+	log.Printf("[DNS] GeoDNS Response: %s (location: %s) → %s", domainConfig.Domain, clientLocation, agentIP)
 
 	msg.Answer = append(msg.Answer, &dns.A{
 		Hdr: dns.RR_Header{
@@ -142,6 +163,9 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 	question := r.Question[0]
 	qtype := question.Qtype
 	queryName := cleanDomain(question.Name)
+
+	log.Printf("[DNS] Regular query for %s (type: %s), have %d DNS records",
+		queryName, dns.TypeToString[qtype], len(domainConfig.DNSRecords))
 
 	for _, record := range domainConfig.DNSRecords {
 		recordName := record.Name

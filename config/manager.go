@@ -123,6 +123,57 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	// Convert DNS records with location names to GeoDNS map
+	for i := range resp.Domains {
+		domain := &resp.Domains[i]
+
+		// Initialize GeoDNS map if not exists
+		if domain.GeoDNSMap == nil {
+			domain.GeoDNSMap = make(map[string]string)
+		}
+
+		// Known location identifiers
+		geoLocations := map[string]bool{
+			"europe": true, "north-america": true, "south-america": true,
+			"africa": true, "asia": true, "oceania": true,
+			"us": true, "ca": true, "mx": true, "br": true, "ar": true,
+			"gb": true, "de": true, "fr": true, "it": true, "es": true, "nl": true,
+			"ru": true, "cn": true, "jp": true, "kr": true, "sg": true, "in": true,
+			"au": true, "nz": true, "za": true, "eg": true, "ng": true,
+			"ae": true, "tr": true, "ir": true, "kz": true,
+		}
+
+		// Separate regular DNS records from GeoDNS records
+		regularRecords := []DNSRecord{}
+
+		for _, record := range domain.DNSRecords {
+			if record.Type == "A" {
+				recordName := record.Name
+
+				// Check if this is a GeoDNS location record
+				if geoLocations[recordName] {
+					domain.GeoDNSMap[recordName] = record.Value
+					log.Printf("[Config] Converting DNS record to GeoDNS: %s -> %s", recordName, record.Value)
+				} else if recordName == "@" || recordName == "" || recordName == domain.Domain {
+					// This is the default record
+					domain.GeoDNSMap["default"] = record.Value
+					log.Printf("[Config] Setting default GeoDNS: @ -> %s", record.Value)
+					// Keep @ record for regular DNS queries
+					regularRecords = append(regularRecords, record)
+				} else {
+					// Regular DNS record (subdomain, etc)
+					regularRecords = append(regularRecords, record)
+				}
+			} else {
+				// Non-A records (AAAA, CNAME, MX, TXT)
+				regularRecords = append(regularRecords, record)
+			}
+		}
+
+		// Update DNS records (without GeoDNS location records)
+		domain.DNSRecords = regularRecords
+	}
+
 	cm.config.Domains = resp.Domains
 	cm.config.Proxies = resp.Proxies
 	cm.config.LastUpdate = time.Now()
@@ -131,6 +182,32 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 	cm.stats.DomainsLoaded = len(resp.Domains)
 	cm.stats.ProxiesActive = len(resp.Proxies)
 	cm.stats.mu.Unlock()
+
+	// Log detailed configuration AFTER conversion
+	for _, domain := range resp.Domains {
+		log.Printf("[Poll] Domain: %s, DNS Records: %d, GeoDNS entries: %d, HTTP Proxy: %v, SSL: %v",
+			domain.Domain, len(domain.DNSRecords), len(domain.GeoDNSMap),
+			domain.HTTPProxy.Enabled, domain.SSL.Enabled)
+
+		// Log DNS records
+		for _, record := range domain.DNSRecords {
+			log.Printf("[Poll]   DNS: %s %s -> %s (TTL: %d, HTTPProxy: %v)",
+				record.Type, record.Name, record.Value, record.TTL, record.HTTPProxyEnabled)
+		}
+
+		// Log GeoDNS mappings
+		if len(domain.GeoDNSMap) > 0 {
+			for location, ip := range domain.GeoDNSMap {
+				log.Printf("[Poll]   GeoDNS: %s -> %s", location, ip)
+			}
+		}
+	}
+
+	// Log proxy configurations
+	for _, proxy := range resp.Proxies {
+		log.Printf("[Poll] Proxy: %s, Protocol: '%s', Port: %d -> %s:%d",
+			proxy.Name, proxy.Protocol, proxy.ListenPort, proxy.TargetHost, proxy.TargetPort)
+	}
 }
 
 func (cm *ConfigManager) recordSuccessfulPoll() {
