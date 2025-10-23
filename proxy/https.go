@@ -91,8 +91,21 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !domainConfig.HTTPProxy.Enabled {
-		log.Printf("[HTTPS] HTTP proxy not enabled for domain: %s", host)
+	// Check if HTTP proxy is enabled OR if any DNS record has HTTPProxyEnabled
+	httpEnabled := domainConfig.HTTPProxy.Enabled
+	if !httpEnabled {
+		// Check if any DNS record allows HTTP proxy
+		for _, record := range domainConfig.DNSRecords {
+			if record.HTTPProxyEnabled {
+				httpEnabled = true
+				break
+			}
+		}
+	}
+
+	if !httpEnabled {
+		log.Printf("[HTTPS] HTTP proxy not enabled for domain: %s (HTTPProxy.Enabled=%v)",
+			host, domainConfig.HTTPProxy.Enabled)
 		http.Error(w, "HTTP proxy not enabled", http.StatusForbidden)
 		return
 	}

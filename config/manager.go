@@ -145,8 +145,13 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 
 		// Separate regular DNS records from GeoDNS records
 		regularRecords := []DNSRecord{}
+		hasHTTPProxyEnabled := false
 
 		for _, record := range domain.DNSRecords {
+			// Check if any DNS record has HTTPProxyEnabled
+			if record.HTTPProxyEnabled {
+				hasHTTPProxyEnabled = true
+			}
 			if record.Type == "A" {
 				recordName := record.Name
 
@@ -168,6 +173,18 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 				// Non-A records (AAAA, CNAME, MX, TXT)
 				regularRecords = append(regularRecords, record)
 			}
+		}
+
+		// Auto-enable HTTP proxy if type is set (Core doesn't send 'enabled' field)
+		if domain.HTTPProxy.Type != "" && !domain.HTTPProxy.Enabled {
+			log.Printf("[Config] Auto-enabling HTTP proxy for %s (type=%s)", domain.Domain, domain.HTTPProxy.Type)
+			domain.HTTPProxy.Enabled = true
+		}
+
+		// Also auto-enable if any DNS record has HTTPProxyEnabled
+		if hasHTTPProxyEnabled && !domain.HTTPProxy.Enabled {
+			log.Printf("[Config] Auto-enabling HTTP proxy for %s (found HTTPProxyEnabled DNS records)", domain.Domain)
+			domain.HTTPProxy.Enabled = true
 		}
 
 		// Update DNS records (without GeoDNS location records)
