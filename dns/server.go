@@ -67,7 +67,9 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	msg.Authoritative = true
 
 	if len(r.Question) == 0 {
-		w.WriteMsg(msg)
+		if err := w.WriteMsg(msg); err != nil {
+			log.Printf("[DNS] Error writing response: %v", err)
+		}
 		return
 	}
 
@@ -127,7 +129,9 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 		A: net.ParseIP(agentIP),
 	})
 
-	w.WriteMsg(msg)
+	if err := w.WriteMsg(msg); err != nil {
+		log.Printf("[DNS] Error writing response: %v", err)
+	}
 }
 
 func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainConfig *config.Domain) {
@@ -225,14 +229,18 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 		msg.Rcode = dns.RcodeNameError
 	}
 
-	w.WriteMsg(msg)
+	if err := w.WriteMsg(msg); err != nil {
+		log.Printf("[DNS] Error writing response: %v", err)
+	}
 }
 
 func (s *DNSServer) sendNXDOMAIN(w dns.ResponseWriter, r *dns.Msg) {
 	msg := new(dns.Msg)
 	msg.SetReply(r)
 	msg.Rcode = dns.RcodeNameError
-	w.WriteMsg(msg)
+	if err := w.WriteMsg(msg); err != nil {
+		log.Printf("[DNS] Error writing NXDOMAIN response: %v", err)
+	}
 }
 
 func cleanDomain(domain string) string {
