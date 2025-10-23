@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  defenra-agent:
+    build: .
+    container_name: defenra-agent
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - AGENT_ID=${AGENT_ID}
+      - AGENT_KEY=${AGENT_KEY}
+      - CORE_URL=${CORE_URL}
+      - POLLING_INTERVAL=${POLLING_INTERVAL:-60}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    networks:
+      - defenra-network
+
+networks:
+  defenra-network:
+    driver: bridge

@@ -1,0 +1,56 @@
+[Unit]
+Description=Defenra Agent - GeoDNS, HTTP/HTTPS Proxy, TCP/UDP Proxy, Lua WAF
+Documentation=https://github.com/defenra/agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=defenra
+Group=defenra
+WorkingDirectory=/opt/defenra-agent
+
+# Environment variables
+Environment="AGENT_ID=agent_xxx"
+Environment="AGENT_KEY=your_secret_key_here"
+Environment="CORE_URL=https://core.defenra.com"
+Environment="POLLING_INTERVAL=60"
+Environment="LOG_LEVEL=info"
+Environment="CACHE_SIZE=10000"
+
+# Start agent
+ExecStart=/opt/defenra-agent/defenra-agent
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=defenra-agent
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/defenra-agent
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+
+# Allow binding to privileged ports (53, 80, 443)
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+MemoryMax=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

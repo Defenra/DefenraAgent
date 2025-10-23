@@ -1,0 +1,60 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Download dependencies
+        run: go mod download
+      
+      - name: Run tests
+        run: go test -v -cover ./...
+      
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+      
+      - name: Build
+        run: go build -v .
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    strategy:
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o defenra-agent-${{ matrix.os }}-${{ matrix.arch }} .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: defenra-agent-${{ matrix.os }}-${{ matrix.arch }}
+          path: defenra-agent-${{ matrix.os }}-${{ matrix.arch }}
