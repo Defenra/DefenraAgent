@@ -19,24 +19,24 @@ High-performance agent written in Go that provides:
 
 ### 🚀 One-Line Installation (Recommended)
 
-**With credentials:**
 ```bash
-export AGENT_ID="your_agent_id"
-export AGENT_KEY="your_agent_key"
+export AGENT_ID="your-agent-id"
+export AGENT_KEY="your-agent-key"
 export CORE_URL="https://core.defenra.com"
 curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo -E bash
 ```
 
-⚡ **Done in 2 minutes!** Automatically downloads, configures, and starts the agent.
+⚡ **Done in ~1 minute!** Automatically downloads, configures, and starts the agent.
 
-**Or interactive installation:**
+### Alternative: Interactive Installation
+
 ```bash
-wget https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh
-chmod +x install.sh
-sudo ./install.sh
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo bash
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for detailed options and [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for advanced scenarios.
+The installer will prompt you for credentials and configure everything automatically.
+
+**See [QUICKSTART.md](QUICKSTART.md) for detailed instructions or [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for advanced scenarios.**
 
 ### Manual Installation
 

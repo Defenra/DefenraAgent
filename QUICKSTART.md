@@ -1,39 +1,49 @@
 # Quick Start Guide
 
-Get Defenra Agent up and running in 5 minutes!
+Get Defenra Agent running in under 2 minutes!
 
-## 🚀 One-Line Install (Fastest)
+## Prerequisites
 
-### With Your Credentials (Recommended)
+- Linux or macOS
+- Root/sudo access
+- Ports available: 53 (DNS), 80 (HTTP), 443 (HTTPS), 8080 (Health)
+
+## Installation Methods
+
+### Method 1: One-Line Installation (Recommended) ⚡
+
+**Fastest way - takes ~1 minute:**
 
 ```bash
-export AGENT_ID="your_agent_id"
-export AGENT_KEY="your_agent_key"
+export AGENT_ID="your-agent-id"
+export AGENT_KEY="your-agent-key"
 export CORE_URL="https://core.defenra.com"
 curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo -E bash
 ```
 
-⚡ **Done in ~2 minutes!** The script will:
-- ✅ Detect your platform automatically
-- ✅ Download pre-built binary from GitHub Releases
-- ✅ Verify checksums
-- ✅ Download GeoIP database
-- ✅ Create systemd service
-- ✅ Start the agent
+**What it does:**
+- ✅ Auto-detects your platform (Linux/macOS, AMD64/ARM64)
+- ✅ Downloads latest binary from GitHub Releases
+- ✅ Verifies checksums for security
+- ✅ Creates unprivileged user (defenra)
+- ✅ Installs systemd service with proper capabilities
+- ✅ Starts the agent automatically
 
-### Without Credentials (Configure Later)
+**That's it! The agent is now running.**
+
+### Method 2: Interactive Installation
+
+If you prefer to enter credentials interactively:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo bash
 ```
 
-Then configure:
-```bash
-sudo nano /etc/systemd/system/defenra-agent.service
-# Update AGENT_ID and AGENT_KEY
-sudo systemctl daemon-reload
-sudo systemctl start defenra-agent
-```
+The installer will:
+- Prompt for Agent ID, Agent Key, and Core URL
+- Test connection to Core API
+- Build from source or download binary
+- Configure and start the service
 
 ---
 
