@@ -455,11 +455,9 @@ install_binary() {
     chown defenra:defenra $INSTALL_DIR/defenra-agent
     chmod 755 $INSTALL_DIR/defenra-agent
     
-    # Grant capability to bind to privileged ports
-    print_info "Granting network capabilities..."
-    setcap 'cap_net_bind_service=+ep' $INSTALL_DIR/defenra-agent || {
-        print_warning "Failed to set capabilities, agent may not bind to ports < 1024"
-    }
+    # Note: Network capabilities are granted via systemd service
+    # The service file includes: AmbientCapabilities=CAP_NET_BIND_SERVICE
+    print_info "Network capabilities will be granted via systemd service"
     
     print_success "Binary installed"
 }

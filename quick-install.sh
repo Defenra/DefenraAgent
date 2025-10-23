@@ -138,8 +138,8 @@ cp "/tmp/${BINARY_NAME}" "$INSTALL_DIR/defenra-agent"
 chown -R defenra:defenra $INSTALL_DIR
 chmod 755 "$INSTALL_DIR/defenra-agent"
 
-# Set capabilities
-setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/defenra-agent" 2>/dev/null || print_warning "Could not set capabilities"
+# Note: Capabilities are granted via systemd service (AmbientCapabilities)
+print_info "Network capabilities will be granted via systemd service"
 
 # Download GeoIP database
 print_info "Downloading GeoIP database..."
