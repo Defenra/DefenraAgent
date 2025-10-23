@@ -1,0 +1,100 @@
+name: Tag and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  create-tag:
+    name: Create Version Tag
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Validate version format
+        run: |
+          if ! [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Version must be in format X.Y.Z (e.g., 1.0.0)"
+            exit 1
+          fi
+      
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "Error: Tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+      
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Update CHANGELOG
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          
+          # Create new changelog entry
+          cat > CHANGELOG_NEW.md << EOF
+          # Changelog
+          
+          ## [v${{ inputs.version }}] - $TODAY
+          
+          ### Added
+          - New features in this release
+          
+          ### Changed
+          - Changes to existing functionality
+          
+          ### Fixed
+          - Bug fixes
+          
+          ### Security
+          - Security improvements
+          
+          ---
+          
+          EOF
+          
+          # Append existing changelog if it exists
+          if [ -f CHANGELOG.md ]; then
+            tail -n +2 CHANGELOG.md >> CHANGELOG_NEW.md
+          fi
+          
+          mv CHANGELOG_NEW.md CHANGELOG.md
+          
+          echo ""
+          echo "📝 CHANGELOG.md has been updated"
+          echo "Please edit CHANGELOG.md to add actual release notes before pushing"
+          echo ""
+      
+      - name: Create and push tag
+        run: |
+          git add CHANGELOG.md
+          git commit -m "Release v${{ inputs.version }}" || echo "No changes to commit"
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+      
+      - name: Trigger release workflow
+        run: |
+          echo "✅ Tag v${{ inputs.version }} created and pushed"
+          echo "🚀 Release workflow will start automatically"
+          echo ""
+          echo "Monitor release progress at:"
+          echo "https://github.com/${{ github.repository }}/actions"

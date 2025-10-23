@@ -13,6 +13,8 @@ NC='\033[0m' # No Color
 INSTALL_DIR="/opt/defenra-agent"
 SERVICE_FILE="/etc/systemd/system/defenra-agent.service"
 GEOIP_URL="https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+GITHUB_REPO="Defenra/DefenraAgent"
+GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 MIN_GO_VERSION="1.21"
 
 # Helper functions
@@ -69,12 +71,165 @@ check_go() {
     print_success "Go version $GO_VERSION detected"
 }
 
+# Detect platform and architecture
+detect_platform() {
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m)
+    
+    # Map architecture names
+    case "$ARCH" in
+        x86_64|amd64)
+            ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            ARCH="arm64"
+            ;;
+        armv7l)
+            ARCH="arm"
+            ;;
+        *)
+            print_error "Unsupported architecture: $ARCH"
+            return 1
+            ;;
+    esac
+    
+    # Map OS names
+    case "$OS" in
+        linux)
+            OS="linux"
+            ;;
+        darwin)
+            OS="darwin"
+            ;;
+        *)
+            print_error "Unsupported operating system: $OS"
+            return 1
+            ;;
+    esac
+    
+    PLATFORM="${OS}-${ARCH}"
+    BINARY_NAME="defenra-agent-${PLATFORM}"
+    
+    print_success "Detected platform: ${PLATFORM}"
+    return 0
+}
+
+# Download binary from GitHub releases
+download_binary() {
+    print_header "Downloading Pre-built Binary"
+    
+    if ! detect_platform; then
+        print_warning "Could not detect platform, will build from source"
+        return 1
+    fi
+    
+    print_info "Fetching latest release information..."
+    
+    # Get latest release info
+    RELEASE_INFO=$(curl -s "$GITHUB_API")
+    
+    if [ -z "$RELEASE_INFO" ]; then
+        print_warning "Could not fetch release information"
+        return 1
+    fi
+    
+    # Extract tag name and download URL
+    TAG_NAME=$(echo "$RELEASE_INFO" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG_NAME}/${BINARY_NAME}.tar.gz"
+    CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+    
+    if [ -z "$TAG_NAME" ]; then
+        print_warning "Could not determine latest release version"
+        return 1
+    fi
+    
+    print_info "Latest release: ${TAG_NAME}"
+    print_info "Downloading binary from GitHub..."
+    print_info "URL: ${DOWNLOAD_URL}"
+    
+    # Download binary
+    if ! wget -q --show-progress -O "/tmp/${BINARY_NAME}.tar.gz" "$DOWNLOAD_URL" 2>&1; then
+        print_warning "Failed to download binary from GitHub"
+        print_info "Will build from source instead"
+        return 1
+    fi
+    
+    print_success "Binary downloaded"
+    
+    # Download checksum
+    print_info "Downloading checksum..."
+    if wget -q -O "/tmp/${BINARY_NAME}.tar.gz.sha256" "$CHECKSUM_URL" 2>&1; then
+        print_info "Verifying checksum..."
+        cd /tmp
+        if sha256sum -c "${BINARY_NAME}.tar.gz.sha256" 2>&1 | grep -q "OK"; then
+            print_success "Checksum verified"
+        else
+            print_warning "Checksum verification failed"
+            print_info "Continuing anyway..."
+        fi
+        cd - > /dev/null
+    else
+        print_warning "Could not download checksum file"
+        print_info "Skipping verification"
+    fi
+    
+    # Extract binary
+    print_info "Extracting binary..."
+    if ! tar -xzf "/tmp/${BINARY_NAME}.tar.gz" -C /tmp; then
+        print_error "Failed to extract binary"
+        rm -f "/tmp/${BINARY_NAME}.tar.gz"
+        return 1
+    fi
+    
+    # Verify extracted binary exists
+    if [ ! -f "/tmp/${BINARY_NAME}" ]; then
+        print_error "Extracted binary not found"
+        return 1
+    fi
+    
+    # Move to working directory
+    mv "/tmp/${BINARY_NAME}" "./defenra-agent"
+    chmod +x "./defenra-agent"
+    
+    # Cleanup
+    rm -f "/tmp/${BINARY_NAME}.tar.gz" "/tmp/${BINARY_NAME}.tar.gz.sha256"
+    
+    BINARY_SIZE=$(du -h defenra-agent | awk '{print $1}')
+    print_success "Binary ready (size: $BINARY_SIZE)"
+    
+    return 0
+}
+
 # Check system requirements
 check_requirements() {
     print_header "Checking System Requirements"
     
     check_root
-    check_go
+    
+    # Check for wget and curl (required for download)
+    local missing_cmds=()
+    for cmd in wget curl systemctl; do
+        if ! command -v $cmd &> /dev/null; then
+            missing_cmds+=($cmd)
+        fi
+    done
+    
+    if [ ${#missing_cmds[@]} -ne 0 ]; then
+        print_error "Missing required commands: ${missing_cmds[*]}"
+        echo "Please install them and try again"
+        exit 1
+    fi
+    print_success "All required commands available"
+    
+    # Check Go only if we might need to build
+    if ! command -v go &> /dev/null; then
+        print_warning "Go is not installed"
+        print_info "Will try to download pre-built binary"
+        print_info "If download fails, you'll need to install Go"
+    else
+        GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+        print_success "Go version $GO_VERSION detected"
+    fi
     
     # Check for required commands
     local missing_cmds=()
@@ -100,9 +255,47 @@ check_requirements() {
     fi
 }
 
+# Check if running interactively
+is_interactive() {
+    [ -t 0 ]
+}
+
 # Get agent credentials
 get_credentials() {
     print_header "Agent Configuration"
+    
+    # Check if credentials provided via environment
+    if [ -n "$AGENT_ID" ] && [ -n "$AGENT_KEY" ]; then
+        print_info "Using credentials from environment variables"
+        CORE_URL=${CORE_URL:-https://core.defenra.com}
+        POLLING_INTERVAL=${POLLING_INTERVAL:-60}
+        LOG_LEVEL=${LOG_LEVEL:-info}
+        
+        echo ""
+        print_info "Configuration:"
+        echo "  Agent ID: $AGENT_ID"
+        echo "  Core URL: $CORE_URL"
+        echo "  Polling Interval: ${POLLING_INTERVAL}s"
+        echo "  Log Level: $LOG_LEVEL"
+        echo ""
+        
+        return 0
+    fi
+    
+    # Check if running interactively
+    if ! is_interactive; then
+        print_error "Not running in interactive mode and no credentials provided"
+        echo ""
+        echo "For non-interactive installation, set environment variables:"
+        echo "  export AGENT_ID=your_agent_id"
+        echo "  export AGENT_KEY=your_agent_key"
+        echo "  export CORE_URL=https://core.defenra.com"
+        echo ""
+        echo "Then run: curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo -E bash"
+        echo ""
+        echo "Or use quick-install.sh for a simpler setup"
+        exit 1
+    fi
     
     echo "Please enter your agent credentials from Defenra Core dashboard:"
     echo ""
@@ -162,11 +355,16 @@ test_connection() {
     else
         print_warning "Could not connect to Core API"
         print_warning "This might be normal if the endpoint requires authentication"
-        echo ""
-        read -p "Continue anyway? (y/N): " CONTINUE
-        if [ "$CONTINUE" != "y" ] && [ "$CONTINUE" != "Y" ]; then
-            print_error "Installation cancelled"
-            exit 0
+        
+        if is_interactive; then
+            echo ""
+            read -p "Continue anyway? (y/N): " CONTINUE
+            if [ "$CONTINUE" != "y" ] && [ "$CONTINUE" != "Y" ]; then
+                print_error "Installation cancelled"
+                exit 0
+            fi
+        else
+            print_info "Non-interactive mode: continuing installation"
         fi
     fi
 }
@@ -196,15 +394,35 @@ create_directory() {
     print_success "Installation directory created"
 }
 
-# Build the agent
+# Build the agent from source
 build_agent() {
-    print_header "Building Defenra Agent"
+    print_header "Building Defenra Agent from Source"
+    
+    # Check if Go is available
+    if ! command -v go &> /dev/null; then
+        print_error "Go is not installed and binary download failed"
+        echo ""
+        echo "Please install Go ${MIN_GO_VERSION} or higher"
+        echo "Visit: https://golang.org/dl/"
+        echo ""
+        echo "Quick install (Linux):"
+        echo "  wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz"
+        echo "  sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz"
+        echo "  export PATH=\$PATH:/usr/local/go/bin"
+        exit 1
+    fi
     
     print_info "Downloading dependencies..."
-    go mod download
+    if ! go mod download; then
+        print_error "Failed to download Go dependencies"
+        exit 1
+    fi
     
     print_info "Building binary..."
-    go build -ldflags "-s -w" -o defenra-agent .
+    if ! go build -ldflags "-s -w" -o defenra-agent .; then
+        print_error "Build failed"
+        exit 1
+    fi
     
     if [ ! -f "defenra-agent" ]; then
         print_error "Build failed - binary not found"
@@ -213,6 +431,19 @@ build_agent() {
     
     BINARY_SIZE=$(du -h defenra-agent | awk '{print $1}')
     print_success "Build completed (size: $BINARY_SIZE)"
+}
+
+# Get or build agent binary
+get_agent_binary() {
+    # First, try to download pre-built binary
+    if download_binary; then
+        print_success "Using pre-built binary from GitHub"
+        return 0
+    fi
+    
+    # If download fails, build from source
+    print_warning "Pre-built binary not available, building from source..."
+    build_agent
 }
 
 # Install binary
@@ -335,6 +566,13 @@ EOF
 # Configure firewall
 configure_firewall() {
     print_header "Configuring Firewall"
+    
+    # Skip firewall configuration in non-interactive mode
+    if ! is_interactive; then
+        print_info "Non-interactive mode: skipping firewall configuration"
+        print_warning "Remember to manually open ports: 53, 80, 443, 8080"
+        return 0
+    fi
     
     # Check if ufw is available
     if command -v ufw &> /dev/null; then
@@ -479,7 +717,7 @@ main() {
     test_connection
     create_user
     create_directory
-    build_agent
+    get_agent_binary  # Changed: now tries download first, then builds
     install_binary
     download_geoip
     create_service

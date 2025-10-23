@@ -2,6 +2,41 @@
 
 Get Defenra Agent up and running in 5 minutes!
 
+## 🚀 One-Line Install (Fastest)
+
+### With Your Credentials (Recommended)
+
+```bash
+export AGENT_ID="your_agent_id"
+export AGENT_KEY="your_agent_key"
+export CORE_URL="https://core.defenra.com"
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo -E bash
+```
+
+⚡ **Done in ~2 minutes!** The script will:
+- ✅ Detect your platform automatically
+- ✅ Download pre-built binary from GitHub Releases
+- ✅ Verify checksums
+- ✅ Download GeoIP database
+- ✅ Create systemd service
+- ✅ Start the agent
+
+### Without Credentials (Configure Later)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo bash
+```
+
+Then configure:
+```bash
+sudo nano /etc/systemd/system/defenra-agent.service
+# Update AGENT_ID and AGENT_KEY
+sudo systemctl daemon-reload
+sudo systemctl start defenra-agent
+```
+
+---
+
 ## Option 1: Quick Start Script (Linux/macOS)
 
 ```bash

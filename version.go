@@ -1,7 +1,9 @@
 package main
 
-const (
-	Version   = "1.0.0"
-	BuildDate = "2025-10-23"
-	GitCommit = "initial"
+// Version information
+// These variables are set via ldflags during build
+var (
+	Version   = "dev"
+	BuildDate = "unknown"
+	GitCommit = "unknown"
 )
