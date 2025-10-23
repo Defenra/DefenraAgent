@@ -76,7 +76,9 @@ func (h *HealthServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("[Health] Error encoding response: %v", err)
+	}
 }
 
 func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +105,9 @@ func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("[Health] Error encoding response: %v", err)
+	}
 }
 
 func getMemoryUsage() uint64 {

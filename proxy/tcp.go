@@ -249,11 +249,15 @@ func forwardUDP(serverConn *net.UDPConn, clientAddr *net.UDPAddr, data []byte, p
 	}
 
 	responseBuffer := make([]byte, 65535)
-	targetConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err := targetConn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return
+	}
 	n, err := targetConn.Read(responseBuffer)
 	if err != nil {
 		return
 	}
 
-	serverConn.WriteToUDP(responseBuffer[:n], clientAddr)
+	if _, err := serverConn.WriteToUDP(responseBuffer[:n], clientAddr); err != nil {
+		log.Printf("[UDP Proxy] Error writing response: %v", err)
+	}
 }
