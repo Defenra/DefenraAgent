@@ -1,0 +1,37 @@
+# Binaries
+*.exe
+*.exe~
+defenra-agent
+
+# Test files
+*.test
+
+# Environment
+.env
+.env.local
+
+# GeoIP Database (will be downloaded in container)
+*.mmdb
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+docker-compose.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+install.sh
+uninstall.sh
