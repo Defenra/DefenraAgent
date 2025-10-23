@@ -77,7 +77,9 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
 			log.Printf("[HTTP] Request blocked by WAF: %s", r.Host+r.RequestURI)
 			w.WriteHeader(response.StatusCode)
-			w.Write([]byte(response.Body))
+			if _, err := w.Write([]byte(response.Body)); err != nil {
+				log.Printf("[HTTP] Error writing WAF response: %v", err)
+			}
 			return
 		}
 	}
@@ -157,7 +159,9 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("[HTTP] Error copying response body: %v", err)
+	}
 
 	log.Printf("[HTTP] Proxied: %s → %s (status: %d)", r.Host+r.RequestURI, target, resp.StatusCode)
 }

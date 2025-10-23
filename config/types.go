@@ -9,7 +9,6 @@ type Config struct {
 	Domains    []Domain `json:"domains"`
 	Proxies    []Proxy  `json:"proxies"`
 	LastUpdate time.Time
-	mu         sync.RWMutex
 }
 
 type Domain struct {
