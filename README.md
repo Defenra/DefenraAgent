@@ -17,26 +17,75 @@ High-performance agent written in Go that provides:
 
 ## Quick Start
 
-### Prerequisites
+### 🚀 One-Line Installation (Recommended)
 
+**With credentials:**
+```bash
+export AGENT_ID="your_agent_id"
+export AGENT_KEY="your_agent_key"
+export CORE_URL="https://core.defenra.com"
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo -E bash
+```
+
+⚡ **Done in 2 minutes!** Automatically downloads, configures, and starts the agent.
+
+**Or interactive installation:**
+```bash
+wget https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+See [QUICKSTART.md](QUICKSTART.md) for detailed options and [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for advanced scenarios.
+
+### Manual Installation
+
+**Prerequisites:**
+- Linux or macOS
+- x86_64 (AMD64) or ARM64 architecture
+
+**Download Binary:**
+```bash
+# Linux AMD64
+wget https://github.com/Defenra/DefenraAgent/releases/latest/download/defenra-agent-linux-amd64.tar.gz
+tar -xzf defenra-agent-linux-amd64.tar.gz
+
+# Linux ARM64
+wget https://github.com/Defenra/DefenraAgent/releases/latest/download/defenra-agent-linux-arm64.tar.gz
+tar -xzf defenra-agent-linux-arm64.tar.gz
+
+# macOS (Intel)
+wget https://github.com/Defenra/DefenraAgent/releases/latest/download/defenra-agent-darwin-amd64.tar.gz
+tar -xzf defenra-agent-darwin-amd64.tar.gz
+
+# macOS (Apple Silicon)
+wget https://github.com/Defenra/DefenraAgent/releases/latest/download/defenra-agent-darwin-arm64.tar.gz
+tar -xzf defenra-agent-darwin-arm64.tar.gz
+```
+
+**Verify Checksum:**
+```bash
+sha256sum -c defenra-agent-linux-amd64.tar.gz.sha256
+```
+
+### Build from Source
+
+**Prerequisites:**
 - Go 1.21 or higher
-- GeoLite2-City.mmdb (for GeoDNS)
-
-### Installation
 
 ```bash
 # Clone repository
-git clone https://github.com/defenra/agent.git
-cd agent
+git clone https://github.com/Defenra/DefenraAgent.git
+cd DefenraAgent
 
 # Download dependencies
 go mod download
 
-# Download GeoIP database
-wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
-
 # Build
 go build -o defenra-agent .
+
+# Download GeoIP database (optional, for GeoDNS)
+wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
 ```
 
 ### Configuration
@@ -66,12 +115,15 @@ export CORE_URL=https://core.defenra.com
 
 ## Docker
 
+**Pull from Docker Hub:**
 ```bash
-# Build image
-docker build -t defenra-agent .
+docker pull defenra/agent:latest
+```
 
-# Run container
+**Run container:**
+```bash
 docker run -d \
+  --name defenra-agent \
   -p 53:53/udp \
   -p 53:53/tcp \
   -p 80:80 \
@@ -80,7 +132,18 @@ docker run -d \
   -e AGENT_ID=agent_xxx \
   -e AGENT_KEY=xxx \
   -e CORE_URL=https://core.defenra.com \
-  defenra-agent
+  defenra/agent:latest
+```
+
+**Or use Docker Compose:**
+```bash
+# Create .env file with your credentials
+docker-compose up -d
+```
+
+**Build from source:**
+```bash
+docker build -t defenra-agent .
 ```
 
 ## Architecture

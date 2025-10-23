@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release Binaries
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            name: defenra-agent-linux-amd64
+          - os: linux
+            arch: arm64
+            name: defenra-agent-linux-arm64
+          - os: darwin
+            arch: amd64
+            name: defenra-agent-darwin-amd64
+          - os: darwin
+            arch: arm64
+            name: defenra-agent-darwin-arm64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Download dependencies
+        run: go mod download
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags "-s -w -X main.Version=${{ steps.get_version.outputs.VERSION }} -X main.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GitCommit=${GITHUB_SHA::8}" -o ${{ matrix.name }} .
+      
+      - name: Compress binary
+        run: |
+          tar -czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          sha256sum ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            ${{ matrix.name }}.tar.gz
+            ${{ matrix.name }}.tar.gz.sha256
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Get version from tag
+        id: get_version
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "VERSION_NUMBER=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+      
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -name "*.tar.gz*" -exec cp {} release/ \;
+          ls -lah release/
+      
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > RELEASE_NOTES.md << 'EOF'
+          ## Defenra Agent ${{ steps.get_version.outputs.VERSION }}
+          
+          ### 🚀 Installation
+          
+          **Quick Install (Linux):**
+          ```bash
+          curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo bash
+          ```
+          
+          **Manual Download:**
+          - [Linux AMD64](https://github.com/Defenra/DefenraAgent/releases/download/${{ steps.get_version.outputs.VERSION }}/defenra-agent-linux-amd64.tar.gz)
+          - [Linux ARM64](https://github.com/Defenra/DefenraAgent/releases/download/${{ steps.get_version.outputs.VERSION }}/defenra-agent-linux-arm64.tar.gz)
+          - [macOS AMD64](https://github.com/Defenra/DefenraAgent/releases/download/${{ steps.get_version.outputs.VERSION }}/defenra-agent-darwin-amd64.tar.gz)
+          - [macOS ARM64 (M1/M2)](https://github.com/Defenra/DefenraAgent/releases/download/${{ steps.get_version.outputs.VERSION }}/defenra-agent-darwin-arm64.tar.gz)
+          
+          ### 📦 What's Included
+          
+          - **GeoDNS Server** - DNS with geographic routing
+          - **HTTP/HTTPS Reverse Proxy** - With SSL termination
+          - **Lua WAF** - Web Application Firewall
+          - **TCP/UDP Proxy** - Port forwarding
+          
+          ### 🔧 System Requirements
+          
+          - Linux or macOS
+          - x86_64 (AMD64) or ARM64 architecture
+          - Ports: 53, 80, 443, 8080
+          
+          ### 📝 Verification
+          
+          Verify checksums after download:
+          ```bash
+          sha256sum -c defenra-agent-linux-amd64.tar.gz.sha256
+          ```
+          
+          ### 📚 Documentation
+          
+          - [Installation Guide](https://github.com/Defenra/DefenraAgent/blob/main/INSTALL_GUIDE.md)
+          - [Quick Start](https://github.com/Defenra/DefenraAgent/blob/main/QUICKSTART.md)
+          - [Architecture](https://github.com/Defenra/DefenraAgent/blob/main/ARCHITECTURE.md)
+          
+          ### 🐛 Bug Reports
+          
+          Report issues at: https://github.com/Defenra/DefenraAgent/issues
+          
+          ---
+          
+          **Full Changelog:** [${{ steps.get_version.outputs.VERSION }}](https://github.com/Defenra/DefenraAgent/blob/${{ steps.get_version.outputs.VERSION }}/CHANGELOG.md)
+          EOF
+          cat RELEASE_NOTES.md
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          body_path: RELEASE_NOTES.md
+          files: release/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update latest tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+  docker-build:
+    name: Build and Push Docker Image
+    needs: create-release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Get version from tag
+        id: get_version
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+        if: github.event_name != 'pull_request'
+      
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            defenra/agent:${{ steps.get_version.outputs.VERSION }}
+            defenra/agent:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
