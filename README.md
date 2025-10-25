@@ -19,14 +19,25 @@ High-performance agent written in Go that provides:
 
 ### 🚀 One-Line Installation (Recommended)
 
+**Method 1: Using Connection URL (Easiest)**
+
+Get your one-time connection URL from Defenra Core dashboard and run:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | \
+  sudo CONNECT_URL="https://your-core.com/api/agent/connect/TOKEN" bash
+```
+
+⚡ **Done in ~1 minute!** Automatically registers, downloads, configures, and starts the agent.
+
+**Method 2: Using Manual Credentials**
+
 ```bash
 export AGENT_ID="your-agent-id"
 export AGENT_KEY="your-agent-key"
 export CORE_URL="https://core.defenra.com"
 curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo -E bash
 ```
-
-⚡ **Done in ~1 minute!** Automatically downloads, configures, and starts the agent.
 
 ### Alternative: Interactive Installation
 
@@ -35,6 +46,12 @@ curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh
 ```
 
 The installer will prompt you for credentials and configure everything automatically.
+
+**Or with Connection URL:**
+```bash
+export CONNECT_URL="https://your-core.com/api/agent/connect/TOKEN"
+curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo -E bash
+```
 
 **See [QUICKSTART.md](QUICKSTART.md) for detailed instructions or [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for advanced scenarios.**
 
@@ -203,21 +220,34 @@ GET http://localhost:8080/stats
 
 ## GeoDNS
 
-GeoDNS routes clients to the nearest agent based on their geographic location:
+GeoDNS routes clients to the nearest agent based on their geographic location using country-level precision:
 
-- Client from Europe → European agent IP
-- Client from USA → American agent IP
-- Client from Asia → Asian agent IP
+- Client from Ukraine → Ukrainian agent IP (or closest: Poland, Russia, Turkey)
+- Client from USA → American agent IP (or closest: Canada, Mexico, UK)
+- Client from Japan → Japanese agent IP (or closest: South Korea, China, Singapore)
 
-### Supported Locations
+If exact country match is not available, GeoDNS automatically selects the geographically closest agent from the fallback list.
 
-- `us`, `ca`, `mx` - North America
-- `br`, `ar`, `cl` - South America
-- `gb`, `de`, `fr`, `it`, `es`, `nl` - Europe
-- `ru` - Russia
-- `cn`, `jp`, `kr`, `sg`, `in` - Asia
-- `au`, `nz` - Oceania
-- `za`, `eg`, `ng` - Africa
+### Supported Country Codes
+
+**Americas:**
+- `us` (USA), `ca` (Canada), `mx` (Mexico)
+- `br` (Brazil), `ar` (Argentina), `cl` (Chile), `co` (Colombia)
+
+**Europe:**
+- `gb` (UK), `de` (Germany), `fr` (France), `it` (Italy), `es` (Spain)
+- `nl` (Netherlands), `pl` (Poland), `ua` (Ukraine), `ru` (Russia), `tr` (Turkey)
+
+**Asia:**
+- `cn` (China), `jp` (Japan), `kr` (South Korea), `in` (India)
+- `sg` (Singapore), `id` (Indonesia), `th` (Thailand)
+- `ae` (UAE), `ir` (Iran), `kz` (Kazakhstan)
+
+**Oceania:**
+- `au` (Australia), `nz` (New Zealand)
+
+**Africa:**
+- `za` (South Africa), `eg` (Egypt), `ng` (Nigeria)
 
 ## Performance
 
