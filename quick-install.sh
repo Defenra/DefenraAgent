@@ -133,7 +133,7 @@ elif [ -n "$AGENT_ID" ] && [ -n "$AGENT_KEY" ]; then
     print_info "Agent ID: $AGENT_ID"
     
     if [ -z "$CORE_URL" ]; then
-        CORE_URL="https://core.defenra.com"
+        CORE_URL="https://core.defenra.cc"
     fi
     print_info "Core URL: $CORE_URL"
 else
@@ -141,7 +141,7 @@ else
     print_info "Using placeholder - YOU MUST CONFIGURE BEFORE STARTING"
     AGENT_ID="agent_change_me"
     AGENT_KEY="change_me"
-    CORE_URL="https://core.defenra.com"
+    CORE_URL="https://core.defenra.cc"
 fi
 
 # Fetch latest release
@@ -302,5 +302,5 @@ if [ "$AGENT_ID" != "agent_change_me" ] && [ "$AGENT_KEY" != "change_me" ]; then
 fi
 
 echo "Documentation: https://github.com/Defenra/DefenraAgent"
-echo "Support: support@defenra.com"
+echo "Support: support@defenra.cc"
 echo ""
