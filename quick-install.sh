@@ -3,7 +3,12 @@
 set -e
 
 # Quick installation script for Defenra Agent
-# Usage: curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo bash
+# Usage:
+#   With connection URL:
+#     curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo CONNECT_URL="https://your-core.com/api/agent/connect/TOKEN" bash
+#   
+#   With manual credentials:
+#     curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo AGENT_ID="agent_xxx" AGENT_KEY="xxx" CORE_URL="https://your-core.com" bash
 
 # Colors
 RED='\033[0;31m'
@@ -30,7 +35,7 @@ echo ""
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     print_error "This script must be run as root"
-    echo "Please use: curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo bash"
+    echo "Please use: curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/quick-install.sh | sudo CONNECT_URL=\"YOUR_URL\" bash"
     exit 1
 fi
 
@@ -73,25 +78,71 @@ BINARY_NAME="defenra-agent-${PLATFORM}"
 
 print_success "Detected platform: ${PLATFORM}"
 
-# Get credentials from environment or use defaults
-if [ -z "$AGENT_ID" ]; then
-    print_warning "AGENT_ID not set in environment"
+# Get credentials from connection URL or environment
+AGENT_ID=""
+AGENT_KEY=""
+CORE_URL=""
+POLLING_INTERVAL="60"
+
+if [ -n "$CONNECT_URL" ]; then
+    print_info "Using connection URL: $CONNECT_URL"
+    
+    # Extract Core URL from connection URL
+    # Example: https://defenra.0c.md/api/agent/connect/token -> https://defenra.0c.md
+    CORE_URL=$(echo "$CONNECT_URL" | sed -E 's|(https?://[^/]+).*|\1|')
+    print_info "Core URL: $CORE_URL"
+    
+    # Make request to connection URL
+    print_info "Connecting to agent registration..."
+    CONNECT_RESPONSE=$(curl -s "$CONNECT_URL")
+    
+    # Check if request was successful
+    if echo "$CONNECT_RESPONSE" | grep -q '"success":true'; then
+        # Extract values from JSON response
+        AGENT_ID=$(echo "$CONNECT_RESPONSE" | grep -o '"agentId":"[^"]*"' | sed 's/"agentId":"//;s/"//')
+        AGENT_KEY=$(echo "$CONNECT_RESPONSE" | grep -o '"agentKey":"[^"]*"' | sed 's/"agentKey":"//;s/"//')
+        POLLING_INTERVAL=$(echo "$CONNECT_RESPONSE" | grep -o '"pollingInterval":[0-9]*' | sed 's/"pollingInterval"://')
+        
+        if [ -z "$POLLING_INTERVAL" ]; then
+            POLLING_INTERVAL="60"
+        fi
+        
+        print_success "Agent registered successfully!"
+        print_info "Agent ID: $AGENT_ID"
+        
+        # Show auto-assignment info if present
+        if echo "$CONNECT_RESPONSE" | grep -q '"autoAssignment"'; then
+            ASSIGNED_COUNT=$(echo "$CONNECT_RESPONSE" | grep -o '"assignedCount":[0-9]*' | sed 's/"assignedCount"://')
+            AUTO_MSG=$(echo "$CONNECT_RESPONSE" | grep -o '"message":"[^"]*"' | tail -1 | sed 's/"message":"//;s/"//')
+            if [ -n "$AUTO_MSG" ]; then
+                print_success "$AUTO_MSG"
+            fi
+        fi
+    else
+        print_error "Failed to connect agent"
+        ERROR_MSG=$(echo "$CONNECT_RESPONSE" | grep -o '"message":"[^"]*"' | sed 's/"message":"//;s/"//')
+        if [ -n "$ERROR_MSG" ]; then
+            echo "Error: $ERROR_MSG"
+        else
+            echo "Response: $CONNECT_RESPONSE"
+        fi
+        exit 1
+    fi
+elif [ -n "$AGENT_ID" ] && [ -n "$AGENT_KEY" ]; then
+    print_info "Using credentials from environment"
+    print_info "Agent ID: $AGENT_ID"
+    
+    if [ -z "$CORE_URL" ]; then
+        CORE_URL="https://core.defenra.com"
+    fi
+    print_info "Core URL: $CORE_URL"
+else
+    print_warning "No connection URL or credentials provided"
     print_info "Using placeholder - YOU MUST CONFIGURE BEFORE STARTING"
     AGENT_ID="agent_change_me"
-fi
-
-if [ -z "$AGENT_KEY" ]; then
-    print_warning "AGENT_KEY not set in environment"
-    print_info "Using placeholder - YOU MUST CONFIGURE BEFORE STARTING"
     AGENT_KEY="change_me"
-fi
-
-if [ -z "$CORE_URL" ]; then
     CORE_URL="https://core.defenra.com"
 fi
-
-print_info "Agent ID: $AGENT_ID"
-print_info "Core URL: $CORE_URL"
 
 # Fetch latest release
 print_info "Fetching latest release..."
@@ -167,7 +218,7 @@ WorkingDirectory=$INSTALL_DIR
 Environment="AGENT_ID=$AGENT_ID"
 Environment="AGENT_KEY=$AGENT_KEY"
 Environment="CORE_URL=$CORE_URL"
-Environment="POLLING_INTERVAL=60"
+Environment="POLLING_INTERVAL=$POLLING_INTERVAL"
 Environment="LOG_LEVEL=info"
 ExecStart=$INSTALL_DIR/defenra-agent
 Restart=always
@@ -228,6 +279,9 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Location: $INSTALL_DIR"
 echo "Service: defenra-agent.service"
+echo "Agent ID: $AGENT_ID"
+echo "Core URL: $CORE_URL"
+echo "Polling Interval: ${POLLING_INTERVAL}s"
 echo ""
 echo "Useful commands:"
 echo "  • Status:  sudo systemctl status defenra-agent"
