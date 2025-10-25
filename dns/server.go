@@ -284,10 +284,12 @@ func extractClientIP(addr net.Addr) string {
 }
 
 func findBestAgentIP(geoDNSMap map[string]string, clientLocation string) string {
+	// Try exact match first
 	if ip, ok := geoDNSMap[clientLocation]; ok {
 		return ip
 	}
 
+	// Try fallback locations
 	fallbackMap := map[string][]string{
 		"us": {"ca", "mx", "gb", "de"},
 		"ca": {"us", "mx", "gb", "de"},
@@ -326,19 +328,25 @@ func findBestAgentIP(geoDNSMap map[string]string, clientLocation string) string 
 	if fallbacks, ok := fallbackMap[clientLocation]; ok {
 		for _, fallback := range fallbacks {
 			if ip, ok := geoDNSMap[fallback]; ok {
+				log.Printf("[GeoDNS] No exact match for '%s', using fallback '%s' -> %s", clientLocation, fallback, ip)
 				return ip
 			}
 		}
 	}
 
+	// Use default if available
 	if ip, ok := geoDNSMap["default"]; ok {
+		log.Printf("[GeoDNS] No match for '%s', using default -> %s", clientLocation, ip)
 		return ip
 	}
 
-	for _, ip := range geoDNSMap {
+	// Return any available IP as last resort
+	for location, ip := range geoDNSMap {
+		log.Printf("[GeoDNS] No default available, using any available location '%s' -> %s", location, ip)
 		return ip
 	}
 
+	log.Printf("[GeoDNS] No agent IPs available in GeoDNS map")
 	return ""
 }
 
