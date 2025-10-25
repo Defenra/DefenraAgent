@@ -161,8 +161,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=defenra
-Group=defenra
+User=root
+Group=root
 WorkingDirectory=$INSTALL_DIR
 Environment="AGENT_ID=$AGENT_ID"
 Environment="AGENT_KEY=$AGENT_KEY"
