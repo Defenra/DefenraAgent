@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -141,9 +142,9 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 			if len(name) != 2 {
 				return false
 			}
-			// Check if both characters are lowercase letters
+			// Check if both characters are letters (uppercase or lowercase)
 			for _, c := range name {
-				if c < 'a' || c > 'z' {
+				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
 					return false
 				}
 			}
@@ -160,8 +161,10 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 
 				// Check if this is a GeoDNS location record (ISO 3166-1 alpha-2 country code)
 				if isCountryCode(recordName) {
-					domain.GeoDNSMap[recordName] = record.Value
-					log.Printf("[Config] Converting DNS record to GeoDNS: %s -> %s", recordName, record.Value)
+					// Store in lowercase for consistent GeoDNS lookups
+					countryCode := strings.ToLower(recordName)
+					domain.GeoDNSMap[countryCode] = record.Value
+					log.Printf("[Config] Converting DNS record to GeoDNS: %s -> %s (stored as %s)", recordName, record.Value, countryCode)
 				} else if recordName == "@" || recordName == "" || recordName == domain.Domain {
 					// This is the default record
 					domain.GeoDNSMap["default"] = record.Value
