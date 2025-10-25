@@ -132,13 +132,11 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 			domain.GeoDNSMap = make(map[string]string)
 		}
 
-		// Known location identifiers
+		// Known location identifiers (country codes only)
 		geoLocations := map[string]bool{
-			"europe": true, "north-america": true, "south-america": true,
-			"africa": true, "asia": true, "oceania": true,
-			"us": true, "ca": true, "mx": true, "br": true, "ar": true,
-			"gb": true, "de": true, "fr": true, "it": true, "es": true, "nl": true,
-			"ru": true, "cn": true, "jp": true, "kr": true, "sg": true, "in": true,
+			"us": true, "ca": true, "mx": true, "br": true, "ar": true, "cl": true, "co": true,
+			"gb": true, "de": true, "fr": true, "it": true, "es": true, "nl": true, "pl": true, "ua": true,
+			"ru": true, "cn": true, "jp": true, "kr": true, "sg": true, "in": true, "id": true, "th": true,
 			"au": true, "nz": true, "za": true, "eg": true, "ng": true,
 			"ae": true, "tr": true, "ir": true, "kz": true,
 		}
