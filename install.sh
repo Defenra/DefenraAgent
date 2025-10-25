@@ -264,6 +264,63 @@ is_interactive() {
 get_credentials() {
     print_header "Agent Configuration"
     
+    # Check if connection URL provided
+    if [ -n "$CONNECT_URL" ]; then
+        print_info "Using connection URL: $CONNECT_URL"
+        
+        # Extract Core URL from connection URL
+        CORE_URL=$(echo "$CONNECT_URL" | sed -E 's|(https?://[^/]+).*|\1|')
+        print_info "Core URL: $CORE_URL"
+        
+        # Make request to connection URL
+        print_info "Connecting to agent registration..."
+        CONNECT_RESPONSE=$(curl -s "$CONNECT_URL")
+        
+        # Check if request was successful
+        if echo "$CONNECT_RESPONSE" | grep -q '"success":true'; then
+            # Extract values from JSON response
+            AGENT_ID=$(echo "$CONNECT_RESPONSE" | grep -o '"agentId":"[^"]*"' | sed 's/"agentId":"//;s/"//')
+            AGENT_KEY=$(echo "$CONNECT_RESPONSE" | grep -o '"agentKey":"[^"]*"' | sed 's/"agentKey":"//;s/"//')
+            POLLING_INTERVAL=$(echo "$CONNECT_RESPONSE" | grep -o '"pollingInterval":[0-9]*' | sed 's/"pollingInterval"://')
+            
+            if [ -z "$POLLING_INTERVAL" ]; then
+                POLLING_INTERVAL="60"
+            fi
+            
+            LOG_LEVEL=${LOG_LEVEL:-info}
+            
+            print_success "Agent registered successfully!"
+            print_info "Agent ID: $AGENT_ID"
+            
+            # Show auto-assignment info if present
+            if echo "$CONNECT_RESPONSE" | grep -q '"autoAssignment"'; then
+                AUTO_MSG=$(echo "$CONNECT_RESPONSE" | grep -o '"message":"[^"]*"' | tail -1 | sed 's/"message":"//;s/"//')
+                if [ -n "$AUTO_MSG" ]; then
+                    print_success "$AUTO_MSG"
+                fi
+            fi
+            
+            echo ""
+            print_info "Configuration:"
+            echo "  Agent ID: $AGENT_ID"
+            echo "  Core URL: $CORE_URL"
+            echo "  Polling Interval: ${POLLING_INTERVAL}s"
+            echo "  Log Level: $LOG_LEVEL"
+            echo ""
+            
+            return 0
+        else
+            print_error "Failed to connect agent"
+            ERROR_MSG=$(echo "$CONNECT_RESPONSE" | grep -o '"message":"[^"]*"' | sed 's/"message":"//;s/"//')
+            if [ -n "$ERROR_MSG" ]; then
+                echo "Error: $ERROR_MSG"
+            else
+                echo "Response: $CONNECT_RESPONSE"
+            fi
+            exit 1
+        fi
+    fi
+    
     # Check if credentials provided via environment
     if [ -n "$AGENT_ID" ] && [ -n "$AGENT_KEY" ]; then
         print_info "Using credentials from environment variables"
@@ -286,14 +343,19 @@ get_credentials() {
     if ! is_interactive; then
         print_error "Not running in interactive mode and no credentials provided"
         echo ""
-        echo "For non-interactive installation, set environment variables:"
-        echo "  export AGENT_ID=your_agent_id"
-        echo "  export AGENT_KEY=your_agent_key"
-        echo "  export CORE_URL=https://core.defenra.com"
+        echo "For non-interactive installation, use one of:"
+        echo ""
+        echo "1. Connection URL (recommended):"
+        echo "   export CONNECT_URL=\"https://your-core.com/api/agent/connect/TOKEN\""
+        echo ""
+        echo "2. Manual credentials:"
+        echo "   export AGENT_ID=your_agent_id"
+        echo "   export AGENT_KEY=your_agent_key"
+        echo "   export CORE_URL=https://core.defenra.com"
         echo ""
         echo "Then run: curl -sSL https://raw.githubusercontent.com/Defenra/DefenraAgent/main/install.sh | sudo -E bash"
         echo ""
-        echo "Or use quick-install.sh for a simpler setup"
+        echo "Or use quick-install.sh for a simpler one-line setup"
         exit 1
     fi
     
