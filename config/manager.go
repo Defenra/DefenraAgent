@@ -132,18 +132,23 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 			domain.GeoDNSMap = make(map[string]string)
 		}
 
-		// Known location identifiers (country codes only)
-		geoLocations := map[string]bool{
-			"us": true, "ca": true, "mx": true, "br": true, "ar": true, "cl": true, "co": true,
-			"gb": true, "de": true, "fr": true, "it": true, "es": true, "nl": true, "pl": true, "ua": true,
-			"ru": true, "cn": true, "jp": true, "kr": true, "sg": true, "in": true, "id": true, "th": true,
-			"au": true, "nz": true, "za": true, "eg": true, "ng": true,
-			"ae": true, "tr": true, "ir": true, "kz": true,
-		}
-
 		// Separate regular DNS records from GeoDNS records
 		regularRecords := []DNSRecord{}
 		hasHTTPProxyEnabled := false
+
+		// Helper function to check if a name is a valid ISO 3166-1 alpha-2 country code
+		isCountryCode := func(name string) bool {
+			if len(name) != 2 {
+				return false
+			}
+			// Check if both characters are lowercase letters
+			for _, c := range name {
+				if c < 'a' || c > 'z' {
+					return false
+				}
+			}
+			return true
+		}
 
 		for _, record := range domain.DNSRecords {
 			// Check if any DNS record has HTTPProxyEnabled
@@ -153,8 +158,8 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 			if record.Type == "A" {
 				recordName := record.Name
 
-				// Check if this is a GeoDNS location record
-				if geoLocations[recordName] {
+				// Check if this is a GeoDNS location record (ISO 3166-1 alpha-2 country code)
+				if isCountryCode(recordName) {
 					domain.GeoDNSMap[recordName] = record.Value
 					log.Printf("[Config] Converting DNS record to GeoDNS: %s -> %s", recordName, record.Value)
 				} else if recordName == "@" || recordName == "" || recordName == domain.Domain {
