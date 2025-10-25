@@ -61,45 +61,37 @@ func (g *GeoIPService) lookupLocation(ip string) string {
 		"ca": "ca",
 		"mx": "mx",
 		"br": "br",
-		"ar": "south-america",
-		"cl": "south-america",
-		"co": "south-america",
-		"gb": "europe",
-		"de": "europe",
-		"fr": "europe",
-		"it": "europe",
-		"es": "europe",
-		"nl": "europe",
-		"pl": "europe",
+		"ar": "ar",
+		"cl": "cl",
+		"co": "co",
+		"gb": "gb",
+		"de": "de",
+		"fr": "fr",
+		"it": "it",
+		"es": "es",
+		"nl": "nl",
+		"pl": "pl",
+		"ua": "ua",
 		"ru": "ru",
 		"cn": "cn",
 		"jp": "jp",
-		"kr": "asia",
+		"kr": "kr",
 		"in": "in",
-		"sg": "asia",
+		"id": "id",
+		"th": "th",
+		"sg": "sg",
 		"au": "au",
-		"nz": "oceania",
-		"za": "africa",
-		"eg": "africa",
-		"ng": "africa",
+		"nz": "nz",
+		"za": "za",
+		"eg": "eg",
+		"ng": "ng",
+		"ae": "ae",
+		"tr": "tr",
+		"ir": "ir",
+		"kz": "kz",
 	}
 
 	if location, ok := countryMap[countryCode]; ok {
-		return location
-	}
-
-	continent := strings.ToLower(record.Continent.Code)
-
-	continentMap := map[string]string{
-		"eu": "europe",
-		"na": "north-america",
-		"sa": "south-america",
-		"as": "asia",
-		"oc": "oceania",
-		"af": "africa",
-	}
-
-	if location, ok := continentMap[continent]; ok {
 		return location
 	}
 
