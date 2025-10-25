@@ -144,7 +144,7 @@ print_info "Network capabilities will be granted via systemd service"
 # Download GeoIP database
 print_info "Downloading GeoIP database..."
 if wget -q --show-progress -O "$INSTALL_DIR/GeoLite2-City.mmdb" \
-    "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb" 2>&1; then
+    "https://s3.tebi.io/wzrd/GeoLite2-City.mmdb" 2>&1; then
     chown defenra:defenra "$INSTALL_DIR/GeoLite2-City.mmdb"
     print_success "GeoIP database downloaded"
 else
