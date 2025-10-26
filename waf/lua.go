@@ -40,7 +40,7 @@ func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
 
 	L.SetGlobal("_blocked", lua.LNil)
 	L.SetGlobal("_status_code", lua.LNumber(403))
-	L.SetGlobal("_body", lua.LString("Blocked by WAF"))
+	L.SetGlobal("_body", lua.LNil) // Will be set by ngx.say/print or default on block
 
 	// Extract IP without port (like nginx does for ngx.var.remote_addr)
 	remoteIP := r.RemoteAddr
@@ -104,13 +104,18 @@ func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
 			}
 		}
 
-		body := "Blocked by WAF"
+		body := ""
 		if bd := L.GetGlobal("_body"); bd != lua.LNil {
 			if str, ok := bd.(lua.LString); ok {
 				body = string(str)
 			} else {
 				log.Printf("[WAF] Invalid _body type: expected string, got %s", bd.Type())
 			}
+		}
+		
+		// Use default body if empty
+		if body == "" {
+			body = "Blocked by WAF"
 		}
 
 		return true, WAFResponse{
@@ -147,6 +152,8 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 			}
 			if uri := L.GetField(reqTable, "uri"); uri != lua.LNil {
 				L.SetField(varTable, "uri", uri)
+				// Also set request_uri (alias for uri in nginx)
+				L.SetField(varTable, "request_uri", uri)
 			}
 			if host := L.GetField(reqTable, "host"); host != lua.LNil {
 				L.SetField(varTable, "host", host)
@@ -165,6 +172,38 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 
 	headerTable := L.NewTable()
 	L.SetField(ngxTable, "header", headerTable)
+
+	// ngx.say() - append text to response body
+	L.SetField(ngxTable, "say", L.NewFunction(func(L *lua.LState) int {
+		text := L.CheckString(1)
+		
+		// Get current body and append
+		currentBody := L.GetGlobal("_body")
+		if currentBody == lua.LNil {
+			L.SetGlobal("_body", lua.LString(text))
+		} else if str, ok := currentBody.(lua.LString); ok {
+			L.SetGlobal("_body", lua.LString(string(str)+text))
+		} else {
+			L.SetGlobal("_body", lua.LString(text))
+		}
+		return 0
+	}))
+
+	// ngx.print() - same as ngx.say() but without newline (we treat them the same)
+	L.SetField(ngxTable, "print", L.NewFunction(func(L *lua.LState) int {
+		text := L.CheckString(1)
+		
+		// Get current body and append
+		currentBody := L.GetGlobal("_body")
+		if currentBody == lua.LNil {
+			L.SetGlobal("_body", lua.LString(text))
+		} else if str, ok := currentBody.(lua.LString); ok {
+			L.SetGlobal("_body", lua.LString(string(str)+text))
+		} else {
+			L.SetGlobal("_body", lua.LString(text))
+		}
+		return 0
+	}))
 
 	L.SetGlobal("ngx", ngxTable)
 }
