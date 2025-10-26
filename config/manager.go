@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -124,6 +126,33 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	// Helper function to validate IPv4 address
+	isValidIPv4 := func(ip string) bool {
+		if ip == "" {
+			return false
+		}
+		parsedIP := net.ParseIP(ip)
+		if parsedIP == nil {
+			return false
+		}
+		// Check if it's IPv4
+		return parsedIP.To4() != nil
+	}
+
+	// Helper function to check if a name is a valid ISO 3166-1 alpha-2 country code
+	isCountryCode := func(name string) bool {
+		if len(name) != 2 {
+			return false
+		}
+		// Check if both characters are letters (uppercase or lowercase)
+		for _, c := range name {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+				return false
+			}
+		}
+		return true
+	}
+
 	// Convert DNS records with location names to GeoDNS map
 	for i := range resp.Domains {
 		domain := &resp.Domains[i]
@@ -137,20 +166,6 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 		regularRecords := []DNSRecord{}
 		hasHTTPProxyEnabled := false
 
-		// Helper function to check if a name is a valid ISO 3166-1 alpha-2 country code
-		isCountryCode := func(name string) bool {
-			if len(name) != 2 {
-				return false
-			}
-			// Check if both characters are letters (uppercase or lowercase)
-			for _, c := range name {
-				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-					return false
-				}
-			}
-			return true
-		}
-
 		for _, record := range domain.DNSRecords {
 			// Check if any DNS record has HTTPProxyEnabled
 			if record.HTTPProxyEnabled {
@@ -161,14 +176,21 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 
 				// Check if this is a GeoDNS location record (ISO 3166-1 alpha-2 country code)
 				if isCountryCode(recordName) {
+					// Validate IP address before adding to GeoDNS map
+					if !isValidIPv4(record.Value) {
+						log.Printf("[Config] WARNING: Invalid IPv4 address for GeoDNS %s: %s - skipping", recordName, record.Value)
+						continue
+					}
 					// Store in lowercase for consistent GeoDNS lookups
 					countryCode := strings.ToLower(recordName)
 					domain.GeoDNSMap[countryCode] = record.Value
-					log.Printf("[Config] Converting DNS record to GeoDNS: %s -> %s (stored as %s)", recordName, record.Value, countryCode)
 				} else if recordName == "@" || recordName == "" || recordName == domain.Domain {
 					// This is the default record
-					domain.GeoDNSMap["default"] = record.Value
-					log.Printf("[Config] Setting default GeoDNS: @ -> %s", record.Value)
+					if !isValidIPv4(record.Value) {
+						log.Printf("[Config] WARNING: Invalid IPv4 address for default GeoDNS: %s - skipping", record.Value)
+					} else {
+						domain.GeoDNSMap["default"] = record.Value
+					}
 					// Keep @ record for regular DNS queries
 					regularRecords = append(regularRecords, record)
 				} else {
@@ -218,11 +240,21 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 				record.Type, record.Name, record.Value, record.TTL, record.HTTPProxyEnabled)
 		}
 
-		// Log GeoDNS mappings
+		// Log GeoDNS mappings in compact format
 		if len(domain.GeoDNSMap) > 0 {
-			for location, ip := range domain.GeoDNSMap {
-				log.Printf("[Poll]   GeoDNS: %s -> %s", location, ip)
+			// Sort keys for consistent output
+			keys := make([]string, 0, len(domain.GeoDNSMap))
+			for k := range domain.GeoDNSMap {
+				keys = append(keys, k)
 			}
+			sort.Strings(keys)
+
+			// Build compact string: "us->1.2.3.4, eu->5.6.7.8, default->9.10.11.12"
+			var geoDNSPairs []string
+			for _, location := range keys {
+				geoDNSPairs = append(geoDNSPairs, location+"->"+domain.GeoDNSMap[location])
+			}
+			log.Printf("[Poll]   GeoDNS: %s", strings.Join(geoDNSPairs, ", "))
 		}
 	}
 

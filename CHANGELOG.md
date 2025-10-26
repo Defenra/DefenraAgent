@@ -5,6 +5,31 @@ All notable changes to Defenra Agent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2025-10-26
+
+### Fixed
+- **WAF/Lua**: Added type assertion checks to prevent panics when Lua scripts set invalid types for `_status_code` or `_body`
+- **WAF/Lua**: Fixed `ngx.exit()` to properly terminate script execution (now uses `L.RaiseError()`)
+- **WAF/Lua**: Fixed `ngx.var.remote_addr` to return IP without port (consistent with nginx behavior)
+- **WAF/Lua**: Fixed shared cache to be global instead of per-request (rate limiting now works correctly)
+- **GeoDNS**: Added IPv4 address validation during configuration polling to prevent invalid IPs
+- **GeoDNS**: Added country code validation (ISO 3166-1 alpha-2 format)
+- **DNS**: Added IP address validation before sending DNS responses
+
+### Added
+- **WAF/Lua**: Added support for `ngx.header` to set custom HTTP headers from Lua scripts
+- **WAF/Lua**: Added support for `ngx.var.method` to access HTTP method
+- **WAF/Lua**: Security headers set in Lua are now properly applied in HTTP/HTTPS proxy responses
+- **WAF/Lua**: Comprehensive unit tests covering all examples from `waf-examples.lua`
+
+### Improved
+- **GeoDNS Logging**: Condensed GeoDNS mappings into single compact log line (e.g., `GeoDNS: us->1.2.3.4, eu->5.6.7.8`) instead of multiple lines
+- **Error Handling**: Better error messages for invalid IP addresses and type mismatches in WAF
+
+### Security
+- **Input Validation**: All IP addresses are now validated using `net.ParseIP()` before use
+- **Type Safety**: Lua type assertions prevent runtime panics from malformed scripts
+
 ## [1.0.0] - 2025-10-23
 
 ### Added

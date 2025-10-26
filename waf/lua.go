@@ -3,19 +3,23 @@ package waf
 import (
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	lua "github.com/yuin/gopher-lua"
 )
 
 type LuaWAF struct {
-	pool *sync.Pool
+	pool        *sync.Pool
+	sharedCache map[string]interface{}
+	cacheMutex  *sync.RWMutex
 }
 
 type WAFResponse struct {
 	Blocked    bool
 	StatusCode int
 	Body       string
+	Headers    map[string]string
 }
 
 func NewLuaWAF() *LuaWAF {
@@ -25,6 +29,8 @@ func NewLuaWAF() *LuaWAF {
 				return lua.NewState()
 			},
 		},
+		sharedCache: make(map[string]interface{}),
+		cacheMutex:  &sync.RWMutex{},
 	}
 }
 
@@ -36,11 +42,17 @@ func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
 	L.SetGlobal("_status_code", lua.LNumber(403))
 	L.SetGlobal("_body", lua.LString("Blocked by WAF"))
 
+	// Extract IP without port (like nginx does for ngx.var.remote_addr)
+	remoteIP := r.RemoteAddr
+	if idx := strings.LastIndex(remoteIP, ":"); idx != -1 {
+		remoteIP = remoteIP[:idx]
+	}
+
 	requestTable := L.NewTable()
 	L.SetField(requestTable, "method", lua.LString(r.Method))
 	L.SetField(requestTable, "uri", lua.LString(r.RequestURI))
 	L.SetField(requestTable, "host", lua.LString(r.Host))
-	L.SetField(requestTable, "remote_addr", lua.LString(r.RemoteAddr))
+	L.SetField(requestTable, "remote_addr", lua.LString(remoteIP))
 
 	headersTable := L.NewTable()
 	for key, values := range r.Header {
@@ -55,23 +67,64 @@ func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
 	w.setupNginxAPI(L)
 
 	if err := L.DoString(luaCode); err != nil {
-		log.Printf("[WAF] Lua execution error: %v", err)
-		return false, WAFResponse{}
+		// Check if this is ngx.exit() (which is expected behavior, not an error)
+		if !strings.Contains(err.Error(), "ngx_exit") {
+			log.Printf("[WAF] Lua execution error: %v", err)
+			return false, WAFResponse{}
+		}
+		// ngx.exit() was called, continue to check _blocked flag
+	}
+
+	// Extract headers set by script
+	headers := make(map[string]string)
+	if ngx := L.GetGlobal("ngx"); ngx != lua.LNil {
+		if ngxTable, ok := ngx.(*lua.LTable); ok {
+			if headerTable := L.GetField(ngxTable, "header"); headerTable != lua.LNil {
+				if hTable, ok := headerTable.(*lua.LTable); ok {
+					hTable.ForEach(func(key, value lua.LValue) {
+						if keyStr, ok := key.(lua.LString); ok {
+							if valStr, ok := value.(lua.LString); ok {
+								headers[string(keyStr)] = string(valStr)
+							}
+						}
+					})
+				}
+			}
+		}
 	}
 
 	blocked := L.GetGlobal("_blocked")
 	if blocked != lua.LNil && blocked != lua.LFalse {
-		statusCode := int(L.GetGlobal("_status_code").(lua.LNumber))
-		body := string(L.GetGlobal("_body").(lua.LString))
+		statusCode := 403
+		if sc := L.GetGlobal("_status_code"); sc != lua.LNil {
+			if num, ok := sc.(lua.LNumber); ok {
+				statusCode = int(num)
+			} else {
+				log.Printf("[WAF] Invalid _status_code type: expected number, got %s", sc.Type())
+			}
+		}
+
+		body := "Blocked by WAF"
+		if bd := L.GetGlobal("_body"); bd != lua.LNil {
+			if str, ok := bd.(lua.LString); ok {
+				body = string(str)
+			} else {
+				log.Printf("[WAF] Invalid _body type: expected string, got %s", bd.Type())
+			}
+		}
 
 		return true, WAFResponse{
 			Blocked:    true,
 			StatusCode: statusCode,
 			Body:       body,
+			Headers:    headers,
 		}
 	}
 
-	return false, WAFResponse{}
+	return false, WAFResponse{
+		Blocked: false,
+		Headers: headers,
+	}
 }
 
 func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
@@ -81,6 +134,8 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 		statusCode := L.CheckInt(1)
 		L.SetGlobal("_blocked", lua.LTrue)
 		L.SetGlobal("_status_code", lua.LNumber(statusCode))
+		// Raise error to stop execution immediately (like ngx.exit in OpenResty)
+		L.RaiseError("ngx_exit")
 		return 0
 	}))
 
@@ -95,6 +150,9 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 			}
 			if host := L.GetField(reqTable, "host"); host != lua.LNil {
 				L.SetField(varTable, "host", host)
+			}
+			if method := L.GetField(reqTable, "method"); method != lua.LNil {
+				L.SetField(varTable, "method", method)
 			}
 		}
 	}
@@ -112,17 +170,14 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 }
 
 func (w *LuaWAF) createSharedCache(L *lua.LState) *lua.LTable {
-	cache := make(map[string]interface{})
-	cacheMutex := &sync.RWMutex{}
-
 	cacheTable := L.NewTable()
 
 	L.SetField(cacheTable, "get", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(2)
 
-		cacheMutex.RLock()
-		value, ok := cache[key]
-		cacheMutex.RUnlock()
+		w.cacheMutex.RLock()
+		value, ok := w.sharedCache[key]
+		w.cacheMutex.RUnlock()
 
 		if !ok {
 			L.Push(lua.LNil)
@@ -145,14 +200,14 @@ func (w *LuaWAF) createSharedCache(L *lua.LState) *lua.LTable {
 		key := L.CheckString(2)
 		value := L.Get(3)
 
-		cacheMutex.Lock()
-		defer cacheMutex.Unlock()
+		w.cacheMutex.Lock()
+		defer w.cacheMutex.Unlock()
 
 		switch value.Type() {
 		case lua.LTNumber:
-			cache[key] = int(value.(lua.LNumber))
+			w.sharedCache[key] = int(value.(lua.LNumber))
 		case lua.LTString:
-			cache[key] = string(value.(lua.LString))
+			w.sharedCache[key] = string(value.(lua.LString))
 		}
 
 		L.Push(lua.LTrue)
@@ -164,19 +219,19 @@ func (w *LuaWAF) createSharedCache(L *lua.LState) *lua.LTable {
 		delta := L.CheckInt(3)
 		initial := L.OptInt(4, 0)
 
-		cacheMutex.Lock()
-		defer cacheMutex.Unlock()
+		w.cacheMutex.Lock()
+		defer w.cacheMutex.Unlock()
 
-		currentValue, ok := cache[key]
+		currentValue, ok := w.sharedCache[key]
 		if !ok {
-			cache[key] = initial + delta
+			w.sharedCache[key] = initial + delta
 			L.Push(lua.LNumber(initial + delta))
 			return 1
 		}
 
 		if intValue, ok := currentValue.(int); ok {
 			newValue := intValue + delta
-			cache[key] = newValue
+			w.sharedCache[key] = newValue
 			L.Push(lua.LNumber(newValue))
 			return 1
 		}
