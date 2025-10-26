@@ -151,6 +151,14 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 
 	log.Printf("[DNS] GeoDNS Response: %s (location: %s) → %s", domainConfig.Domain, clientLocation, agentIP)
 
+	// Validate IP before creating response
+	parsedIP := net.ParseIP(agentIP)
+	if parsedIP == nil {
+		log.Printf("[DNS] ERROR: Invalid IP address in GeoDNS response: %s", agentIP)
+		s.sendNXDOMAIN(w, r)
+		return
+	}
+
 	msg.Answer = append(msg.Answer, &dns.A{
 		Hdr: dns.RR_Header{
 			Name:   r.Question[0].Name,
@@ -158,7 +166,7 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		A: net.ParseIP(agentIP),
+		A: parsedIP,
 	})
 
 	if err := w.WriteMsg(msg); err != nil {
