@@ -81,7 +81,18 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	clientIP := extractClientIP(w.RemoteAddr())
 
+	// Try to find exact domain match first
 	domainConfig := s.configMgr.GetDomain(domain)
+	
+	// If not found, try to find parent domain (for subdomains like _acme-challenge.example.com)
+	if domainConfig == nil {
+		parentDomain := extractParentDomain(domain)
+		if parentDomain != "" {
+			domainConfig = s.configMgr.GetDomain(parentDomain)
+			log.Printf("[DNS] Exact match not found for %s, trying parent domain: %s", domain, parentDomain)
+		}
+	}
+	
 	if domainConfig == nil {
 		log.Printf("[DNS] Domain not found: %s", domain)
 		atomic.AddUint64(&s.stats.NXDomain, 1)
@@ -270,6 +281,15 @@ func (s *DNSServer) sendNXDOMAIN(w dns.ResponseWriter, r *dns.Msg) {
 func cleanDomain(domain string) string {
 	domain = strings.TrimSuffix(domain, ".")
 	return strings.ToLower(domain)
+}
+
+func extractParentDomain(domain string) string {
+	parts := strings.Split(domain, ".")
+	if len(parts) <= 2 {
+		return ""
+	}
+	// Return the last two parts (e.g., "_daun.defenra.cc" -> "defenra.cc")
+	return strings.Join(parts[len(parts)-2:], ".")
 }
 
 func extractClientIP(addr net.Addr) string {
