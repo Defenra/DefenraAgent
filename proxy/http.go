@@ -86,6 +86,12 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 
 	if domainConfig.LuaCode != "" {
 		blocked, response := s.wafEngine.Execute(domainConfig.LuaCode, r)
+		
+		// Apply headers from WAF (even if not blocked, for security headers)
+		for key, value := range response.Headers {
+			w.Header().Set(key, value)
+		}
+		
 		if blocked {
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
 			log.Printf("[HTTP] Request blocked by WAF: %s", r.Host+r.RequestURI)
