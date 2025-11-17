@@ -12,7 +12,7 @@ jobs:
   build:
     name: Build Release Binaries
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         include:
@@ -28,6 +28,13 @@ jobs:
           - os: darwin
             arch: arm64
             name: defenra-agent-darwin-arm64
+          - os: freebsd
+            arch: amd64
+            name: defenra-agent-freebsd-amd64
+          - os: freebsd
+            arch: arm64
+            name: defenra-agent-freebsd-arm64
+
     
     steps:
       - name: Checkout code
