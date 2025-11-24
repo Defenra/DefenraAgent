@@ -78,8 +78,21 @@ func (pm *ProxyManager) updateProxies() {
 	proxies := pm.configMgr.GetProxies()
 
 	currentPorts := make(map[int]bool)
+	enabledPorts := make(map[int]bool)
+	
+	// собираем список активных и включенных прокси
 	for _, proxy := range proxies {
 		currentPorts[proxy.ListenPort] = true
+		if proxy.Enabled {
+			enabledPorts[proxy.ListenPort] = true
+		}
+	}
+
+	// запускаем новые включенные прокси
+	for _, proxy := range proxies {
+		if !proxy.Enabled {
+			continue
+		}
 
 		pm.mu.RLock()
 		_, exists := pm.activeProxies[proxy.ListenPort]
@@ -90,10 +103,11 @@ func (pm *ProxyManager) updateProxies() {
 		}
 	}
 
+	// останавливаем прокси, которые были отключены или удалены
 	pm.mu.Lock()
 	for port, proxy := range pm.activeProxies {
-		if !currentPorts[port] {
-			log.Printf("[Proxy] Stopping proxy on port %d", port)
+		if !currentPorts[port] || !enabledPorts[port] {
+			log.Printf("[Proxy] Stopping proxy on port %d (removed or disabled)", port)
 			proxy.Stop()
 			delete(pm.activeProxies, port)
 		}
