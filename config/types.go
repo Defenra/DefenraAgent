@@ -29,8 +29,41 @@ type DNSRecord struct {
 }
 
 type HTTPProxy struct {
-	Type    string `json:"type"`
-	Enabled bool   `json:"enabled"`
+	Type     string          `json:"type"`
+	Enabled  bool            `json:"enabled"`
+	AntiDDoS AntiDDoSConfig  `json:"antiDDoS"`
+}
+
+type AntiDDoSConfig struct {
+	Enabled              bool             `json:"enabled"`
+	RateLimit            RateLimitConfig  `json:"rateLimit"`
+	BlockDurationSeconds int              `json:"blockDurationSeconds"`
+	Slowloris            SlowlorisConfig  `json:"slowloris"`
+	JSChallenge          JSChallengeConfig `json:"jsChallenge"`
+	Logging              LoggingConfig    `json:"logging"`
+	IPWhitelist          []string         `json:"ipWhitelist"`
+	ProxyIPHeaders       []string         `json:"proxyIpHeaders"`
+}
+
+type RateLimitConfig struct {
+	WindowSeconds int `json:"windowSeconds"`
+	MaxRequests   int `json:"maxRequests"`
+}
+
+type SlowlorisConfig struct {
+	MinContentLength        int `json:"minContentLength"`
+	MaxHeaderTimeoutSeconds int `json:"maxHeaderTimeoutSeconds"`
+	MaxConnections          int `json:"maxConnections"`
+}
+
+type JSChallengeConfig struct {
+	Enabled    bool   `json:"enabled"`
+	CookieName string `json:"cookieName"`
+	TTLSeconds int    `json:"ttlSeconds"`
+}
+
+type LoggingConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type SSL struct {

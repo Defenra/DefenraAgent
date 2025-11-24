@@ -40,13 +40,13 @@ func main() {
 	go dns.StartDNSServer(configMgr)
 
 	log.Println("Starting HTTP Proxy on :80...")
-	go proxy.StartHTTPProxy(configMgr)
+	go proxy.StartHTTPProxy(configMgr, coreURL, agentID)
 
 	log.Println("Starting HTTPS Proxy on :443...")
-	go proxy.StartHTTPSProxy(configMgr)
+	go proxy.StartHTTPSProxy(configMgr, coreURL, agentID)
 
 	log.Println("Starting TCP/UDP Proxy Manager...")
-	go proxy.StartProxyManager(configMgr)
+	go proxy.StartProxyManager(configMgr, coreURL, agentID)
 
 	log.Println("Starting Health Check on :8080...")
 	go health.StartHealthCheck(configMgr)

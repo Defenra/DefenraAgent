@@ -16,6 +16,7 @@ type ProxyManager struct {
 	activeProxies map[int]*TCPProxy
 	mu            sync.RWMutex
 	stopChan      chan struct{}
+	metrics       *MetricsCollector
 }
 
 type TCPProxy struct {
@@ -33,11 +34,12 @@ type ProxyStats struct {
 	mu                sync.RWMutex
 }
 
-func StartProxyManager(configMgr *config.ConfigManager) {
+func StartProxyManager(configMgr *config.ConfigManager, coreURL, agentID string) {
 	manager := &ProxyManager{
 		configMgr:     configMgr,
 		activeProxies: make(map[int]*TCPProxy),
 		stopChan:      make(chan struct{}),
+		metrics:       NewMetricsCollector(coreURL, agentID),
 	}
 
 	go manager.watchProxies()
@@ -126,7 +128,35 @@ func (pm *ProxyManager) startTCPProxy(proxyConfig config.Proxy) {
 	log.Printf("[TCP Proxy] Started: %s on :%d → %s:%d",
 		proxyConfig.Name, proxyConfig.ListenPort, proxyConfig.TargetHost, proxyConfig.TargetPort)
 
-	go proxy.Accept()
+	go proxy.AcceptWithMetrics(pm.metrics)
+}
+
+func (p *TCPProxy) AcceptWithMetrics(metrics *MetricsCollector) {
+	for {
+		select {
+		case <-p.stopChan:
+			return
+		default:
+		}
+
+		conn, err := p.listener.Accept()
+		if err != nil {
+			select {
+			case <-p.stopChan:
+				return
+			default:
+				log.Printf("[TCP Proxy] Accept error: %v", err)
+				continue
+			}
+		}
+
+		p.stats.mu.Lock()
+		p.stats.TotalConnections++
+		p.stats.ActiveConnections++
+		p.stats.mu.Unlock()
+
+		go p.handleConnection(conn, metrics)
+	}
 }
 
 func (p *TCPProxy) Accept() {
@@ -153,11 +183,16 @@ func (p *TCPProxy) Accept() {
 		p.stats.ActiveConnections++
 		p.stats.mu.Unlock()
 
-		go p.handleConnection(conn)
+		go p.handleConnectionWithMetrics(conn, nil)
 	}
 }
 
-func (p *TCPProxy) handleConnection(clientConn net.Conn) {
+func (p *TCPProxy) handleConnectionWithMetrics(conn net.Conn, metrics *MetricsCollector) {
+	p.handleConnection(conn, metrics)
+}
+
+func (p *TCPProxy) handleConnection(clientConn net.Conn, metrics *MetricsCollector) {
+	startTime := time.Now()
 	defer clientConn.Close()
 	defer func() {
 		p.stats.mu.Lock()
@@ -165,18 +200,33 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		p.stats.mu.Unlock()
 	}()
 
+	// Track client
+	clientIP, _, _ := net.SplitHostPort(clientConn.RemoteAddr().String())
+	if metrics != nil {
+		metrics.AddClient(clientIP, "", "", "", "")
+		metrics.AddLog("info", fmt.Sprintf("TCP connection from %s", clientIP),
+			fmt.Sprintf("Proxy: %s, Port: %d", p.config.Name, p.config.ListenPort), nil)
+	}
+
 	targetAddr := fmt.Sprintf("%s:%d", p.config.TargetHost, p.config.TargetPort)
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("[TCP Proxy] Failed to connect to backend %s: %v", targetAddr, err)
+		if metrics != nil {
+			metrics.TrackProxyError(p.config.ID)
+			metrics.AddLog("error", "TCP backend connection failed", err.Error(),
+				map[string]interface{}{"target": targetAddr, "proxy": p.config.Name})
+		}
 		return
 	}
 	defer targetConn.Close()
 
+	var bytesSent, bytesRecv int64
 	done := make(chan struct{}, 2)
 
 	go func() {
 		n, _ := io.Copy(targetConn, clientConn)
+		bytesRecv = n
 		p.stats.mu.Lock()
 		p.stats.BytesReceived += uint64(n)
 		p.stats.mu.Unlock()
@@ -185,6 +235,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 
 	go func() {
 		n, _ := io.Copy(clientConn, targetConn)
+		bytesSent = n
 		p.stats.mu.Lock()
 		p.stats.BytesSent += uint64(n)
 		p.stats.mu.Unlock()
@@ -192,6 +243,14 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	}()
 
 	<-done
+	<-done
+
+	// Record metrics
+	responseTime := time.Since(startTime)
+	if metrics != nil {
+		metrics.TrackProxyTraffic(p.config.ID, bytesRecv, bytesSent)
+		metrics.TrackProxyRequest(p.config.ID, responseTime)
+	}
 }
 
 func (p *TCPProxy) Stop() {
