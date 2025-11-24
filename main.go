@@ -10,6 +10,7 @@ import (
 	"github.com/defenra/agent/dns"
 	"github.com/defenra/agent/health"
 	"github.com/defenra/agent/proxy"
+	"github.com/defenra/agent/stats"
 )
 
 func main() {
@@ -50,6 +51,19 @@ func main() {
 
 	log.Println("Starting Health Check on :8080...")
 	go health.StartHealthCheck(configMgr)
+
+	// настраиваем статистику коллектор
+	statsCollector := stats.GetCollector()
+	statsCollector.SetConfig(coreURL, agentID, agentKey)
+
+	// запускаем отправку статистики каждые 5 минут
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			statsCollector.SendStatistics()
+		}
+	}()
 
 	log.Println("Defenra Agent started successfully")
 

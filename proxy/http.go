@@ -4,33 +4,58 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/defenra/agent/config"
+	"github.com/defenra/agent/firewall"
+	"github.com/defenra/agent/health"
 	"github.com/defenra/agent/waf"
 )
 
+var (
+	globalHTTPServer  *HTTPProxyServer
+	globalHTTPSServer *HTTPSProxyServer
+	globalProxyManager *ProxyManager
+	proxyServersOnce  sync.Once
+)
+
 type HTTPProxyServer struct {
-	configMgr *config.ConfigManager
-	wafEngine *waf.LuaWAF
-	stats     *HTTPStats
+	configMgr   *config.ConfigManager
+	wafEngine   *waf.LuaWAF
+	stats       *HTTPStats
+	rateLimiter *RateLimiter
+	firewallMgr *firewall.IPTablesManager
 }
 
 type HTTPStats struct {
-	TotalRequests   uint64
-	BlockedRequests uint64
-	ProxyErrors     uint64
+	TotalRequests      uint64
+	BlockedRequests    uint64
+	RateLimitBlocks    uint64
+	FirewallBlocks     uint64
+	ProxyErrors        uint64
 }
 
 func StartHTTPProxy(configMgr *config.ConfigManager) {
+	rateLimiter := NewRateLimiter()
+	rateLimiter.StartCleanup()
+
+	firewallMgr := firewall.GetIPTablesManager()
+	health.SetFirewallManager(firewallMgr)
+
 	server := &HTTPProxyServer{
-		configMgr: configMgr,
-		wafEngine: waf.NewLuaWAF(),
-		stats:     &HTTPStats{},
+		configMgr:   configMgr,
+		wafEngine:   waf.NewLuaWAF(),
+		stats:       &HTTPStats{},
+		rateLimiter: rateLimiter,
+		firewallMgr: firewallMgr,
 	}
+	
+	globalHTTPServer = server
 
 	httpServer := &http.Server{
 		Addr:         ":80",
@@ -50,13 +75,73 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		host = host[:idx]
 	}
 
-	log.Printf("[HTTP] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, r.RemoteAddr)
+	clientIP := getClientIP(r)
+	log.Printf("[HTTP] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
+
+	// проверка iptables банов
+	if s.firewallMgr != nil && s.firewallMgr.IsBanned(clientIP) {
+		log.Printf("[HTTP] Request blocked: IP %s is banned", clientIP)
+		atomic.AddUint64(&s.stats.BlockedRequests, 1)
+		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
 	domainConfig := s.configMgr.GetDomain(host)
 	if domainConfig == nil {
 		log.Printf("[HTTP] Domain not found: %s", host)
 		http.Error(w, "Domain not found", http.StatusNotFound)
 		return
+	}
+
+	// проверка whitelist
+	if domainConfig.HTTPProxy.AntiDDoS != nil && domainConfig.HTTPProxy.AntiDDoS.Enabled {
+		if len(domainConfig.HTTPProxy.AntiDDoS.IPWhitelist) > 0 {
+			whitelisted := false
+			for _, wlIP := range domainConfig.HTTPProxy.AntiDDoS.IPWhitelist {
+				if wlIP == clientIP || strings.HasPrefix(clientIP, wlIP) {
+					whitelisted = true
+					break
+				}
+			}
+			if !whitelisted {
+				// проверяем whitelist с CIDR
+				whitelisted = s.isIPInWhitelist(clientIP, domainConfig.HTTPProxy.AntiDDoS.IPWhitelist)
+				if !whitelisted {
+					log.Printf("[HTTP] Request blocked: IP %s not in whitelist", clientIP)
+					atomic.AddUint64(&s.stats.BlockedRequests, 1)
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+			}
+		}
+
+		// rate limiting на L7
+		if domainConfig.HTTPProxy.AntiDDoS.RateLimit != nil {
+			rateLimitConfig := RateLimitConfig{
+				WindowSeconds:       domainConfig.HTTPProxy.AntiDDoS.RateLimit.WindowSeconds,
+				MaxRequests:         domainConfig.HTTPProxy.AntiDDoS.RateLimit.MaxRequests,
+				BlockDurationSeconds: domainConfig.HTTPProxy.AntiDDoS.BlockDurationSeconds,
+			}
+
+			allowed, reason := s.rateLimiter.CheckRateLimit(clientIP, rateLimitConfig)
+			if !allowed {
+				log.Printf("[HTTP] Rate limit exceeded for %s: %s", clientIP, reason)
+				atomic.AddUint64(&s.stats.BlockedRequests, 1)
+				atomic.AddUint64(&s.stats.RateLimitBlocks, 1)
+
+				// блокируем IP через iptables если превышен лимит
+				if s.firewallMgr != nil {
+					duration := time.Duration(domainConfig.HTTPProxy.AntiDDoS.BlockDurationSeconds) * time.Second
+					if err := s.firewallMgr.BanIP(clientIP, duration); err != nil {
+						log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
+					}
+				}
+
+				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+				return
+			}
+		}
 	}
 
 	// Check if HTTP proxy is enabled OR if any DNS record has HTTPProxyEnabled
@@ -202,10 +287,46 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+func (s *HTTPProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
+	clientIP := net.ParseIP(ip)
+	if clientIP == nil {
+		return false
+	}
+
+	for _, wlEntry := range whitelist {
+		if strings.Contains(wlEntry, "/") {
+			// CIDR notation
+			_, ipNet, err := net.ParseCIDR(wlEntry)
+			if err != nil {
+				continue
+			}
+			if ipNet.Contains(clientIP) {
+				return true
+			}
+		} else {
+			// single IP
+			if wlEntry == ip {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func (s *HTTPProxyServer) GetStats() HTTPStats {
 	return HTTPStats{
-		TotalRequests:   atomic.LoadUint64(&s.stats.TotalRequests),
-		BlockedRequests: atomic.LoadUint64(&s.stats.BlockedRequests),
-		ProxyErrors:     atomic.LoadUint64(&s.stats.ProxyErrors),
+		TotalRequests:      atomic.LoadUint64(&s.stats.TotalRequests),
+		BlockedRequests:    atomic.LoadUint64(&s.stats.BlockedRequests),
+		RateLimitBlocks:    atomic.LoadUint64(&s.stats.RateLimitBlocks),
+		FirewallBlocks:     atomic.LoadUint64(&s.stats.FirewallBlocks),
+		ProxyErrors:        atomic.LoadUint64(&s.stats.ProxyErrors),
 	}
+}
+
+func GetHTTPStats() HTTPStats {
+	if globalHTTPServer != nil {
+		return globalHTTPServer.GetStats()
+	}
+	return HTTPStats{}
 }
