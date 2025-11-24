@@ -15,7 +15,6 @@ import (
 type HealthServer struct {
 	configMgr   *config.ConfigManager
 	startTime   time.Time
-	firewallMgr *firewall.IPTablesManager
 }
 
 var globalFirewallMgr *firewall.IPTablesManager

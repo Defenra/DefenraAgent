@@ -66,7 +66,9 @@ func TestIPTablesManager(t *testing.T) {
 		ip := "192.168.100.2"
 		duration := 1 * time.Minute
 
-		manager.BanIP(ip, duration)
+		if err := manager.BanIP(ip, duration); err != nil {
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
 
 		// разбаниваем
 		err := manager.UnbanIP(ip)
@@ -85,7 +87,9 @@ func TestIPTablesManager(t *testing.T) {
 		ip := "192.168.100.3"
 		duration := 100 * time.Millisecond
 
-		manager.BanIP(ip, duration)
+		if err := manager.BanIP(ip, duration); err != nil {
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
 
 		// ждем истечения
 		time.Sleep(150 * time.Millisecond)
@@ -104,8 +108,12 @@ func TestIPTablesManager(t *testing.T) {
 		ip1 := "192.168.100.4"
 		ip2 := "192.168.100.5"
 
-		manager.BanIP(ip1, 1*time.Minute)
-		manager.BanIP(ip2, 2*time.Minute)
+		if err := manager.BanIP(ip1, 1*time.Minute); err != nil {
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
+		if err := manager.BanIP(ip2, 2*time.Minute); err != nil {
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
 
 		bannedIPs := manager.GetBannedIPsInfo()
 		if len(bannedIPs) == 0 {

@@ -13,7 +13,6 @@ import (
 )
 
 type ResourceStats struct {
-	mu                 sync.RWMutex
 	InboundBytes       int64
 	OutboundBytes      int64
 	Requests           int64

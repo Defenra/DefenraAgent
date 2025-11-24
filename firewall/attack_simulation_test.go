@@ -89,7 +89,9 @@ func TestAttackSimulation_DistributedAttack(t *testing.T) {
 					allowed, _ := l4.CheckConnection(attackerIP)
 					if !allowed && i >= 10 {
 						// после лимита баним IP
-						firewallMgr.BanIP(attackerIP, 1*time.Minute)
+						if err := firewallMgr.BanIP(attackerIP, 1*time.Minute); err != nil {
+							t.Logf("BanIP error (expected if not root): %v", err)
+						}
 					}
 				}
 			}(ip)
