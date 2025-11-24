@@ -186,6 +186,128 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 	log.Printf("[DNS] Regular query for %s (type: %s), have %d DNS records",
 		queryName, dns.TypeToString[qtype], len(domainConfig.DNSRecords))
 
+	// сначала ищем CNAME записи для точного совпадения или поддомена
+	var cnameRecord *config.DNSRecord
+	for _, record := range domainConfig.DNSRecords {
+		if record.Type != "CNAME" {
+			continue
+		}
+
+		recordName := record.Name
+		// обработка @ как корневого домена
+		if recordName == "@" || recordName == "" {
+			recordName = domainConfig.Domain
+		} else {
+			// если запись относительная (без точки), добавляем домен
+			if !strings.HasSuffix(recordName, ".") && !strings.Contains(recordName, ".") {
+				// это поддомен нашего домена
+				recordName = recordName + "." + domainConfig.Domain
+			} else if !strings.HasSuffix(recordName, ".") {
+				// проверяем является ли это поддоменом нашего домена
+				if strings.HasSuffix(recordName, domainConfig.Domain) {
+					// это наш поддомен
+				} else {
+					// возможно это полное имя, приводим к FQDN
+					recordName = dns.Fqdn(recordName)
+				}
+			}
+		}
+
+		// нормализуем для сравнения
+		recordNameClean := cleanDomain(recordName)
+		queryNameClean := cleanDomain(queryName)
+
+		// проверяем точное совпадение
+		if recordNameClean == queryNameClean {
+			cnameRecord = &record
+			break
+		}
+	}
+
+	// если найден CNAME, возвращаем его и пытаемся разрешить целевой домен
+	if cnameRecord != nil {
+		targetDomain := cnameRecord.Value
+		// приводим к FQDN формату
+		targetFQDN := dns.Fqdn(targetDomain)
+
+		msg.Answer = append(msg.Answer, &dns.CNAME{
+			Hdr: dns.RR_Header{
+				Name:   question.Name,
+				Rrtype: dns.TypeCNAME,
+				Class:  dns.ClassINET,
+				Ttl:    cnameRecord.TTL,
+			},
+			Target: targetFQDN,
+		})
+
+		// если запрашивается A/AAAA, пытаемся разрешить целевой домен CNAME
+		if qtype == dns.TypeA || qtype == dns.TypeAAAA {
+			targetDomainClean := cleanDomain(targetFQDN)
+			
+			// сначала проверяем есть ли A/AAAA записи для целевого домена в наших записях
+			foundInRecords := false
+			for _, record := range domainConfig.DNSRecords {
+				recordName := record.Name
+				if recordName == "@" {
+					recordName = domainConfig.Domain
+				} else if !strings.HasSuffix(recordName, ".") {
+					recordName = recordName + "." + domainConfig.Domain
+				}
+
+				// проверяем совпадение с целевым доменом CNAME (может быть поддомен)
+				if recordName == targetDomainClean {
+					if qtype == dns.TypeA && record.Type == "A" {
+						ip := net.ParseIP(record.Value)
+						if ip != nil {
+							msg.Answer = append(msg.Answer, &dns.A{
+								Hdr: dns.RR_Header{
+									Name:   targetFQDN,
+									Rrtype: dns.TypeA,
+									Class:  dns.ClassINET,
+									Ttl:    record.TTL,
+								},
+								A: ip,
+							})
+							foundInRecords = true
+						}
+					} else if qtype == dns.TypeAAAA && record.Type == "AAAA" {
+						ip := net.ParseIP(record.Value)
+						if ip != nil {
+							msg.Answer = append(msg.Answer, &dns.AAAA{
+								Hdr: dns.RR_Header{
+									Name:   targetFQDN,
+									Rrtype: dns.TypeAAAA,
+									Class:  dns.ClassINET,
+									Ttl:    record.TTL,
+								},
+								AAAA: ip,
+							})
+							foundInRecords = true
+						}
+					}
+				}
+			}
+
+			// если не нашли в наших записях, проверяем не является ли целевой домен внешним
+			if !foundInRecords {
+				// если целевой домен заканчивается не на наш домен - это внешний CNAME
+				if !strings.HasSuffix(targetDomainClean, domainConfig.Domain) {
+					log.Printf("[DNS] CNAME points to external domain %s, returning CNAME only", targetDomainClean)
+					// для внешних доменов просто возвращаем CNAME, рекурсивный резолвер клиента сам разрешит
+				} else {
+					// это поддомен нашего домена, но записи нет - возвращаем только CNAME
+					log.Printf("[DNS] CNAME target %s not found in records", targetDomainClean)
+				}
+			}
+		}
+
+		if err := w.WriteMsg(msg); err != nil {
+			log.Printf("[DNS] Error writing response: %v", err)
+		}
+		return
+	}
+
+	// обычная обработка записей (A, AAAA, MX, TXT)
 	for _, record := range domainConfig.DNSRecords {
 		recordName := record.Name
 		if recordName == "@" {
@@ -194,13 +316,20 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 			recordName = recordName + "." + domainConfig.Domain
 		}
 
+		// поддерживаем поддомены - если запрашивается поддомен, проверяем точное совпадение
 		if recordName != queryName {
+			// для поддоменов также проверяем совпадение без проверки корневого домена
 			continue
 		}
 
 		switch qtype {
 		case dns.TypeA:
 			if record.Type == "A" {
+				ip := net.ParseIP(record.Value)
+				if ip == nil {
+					log.Printf("[DNS] Invalid IP address in A record: %s", record.Value)
+					continue
+				}
 				msg.Answer = append(msg.Answer, &dns.A{
 					Hdr: dns.RR_Header{
 						Name:   question.Name,
@@ -208,12 +337,17 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						Class:  dns.ClassINET,
 						Ttl:    record.TTL,
 					},
-					A: net.ParseIP(record.Value),
+					A: ip,
 				})
 			}
 
 		case dns.TypeAAAA:
 			if record.Type == "AAAA" {
+				ip := net.ParseIP(record.Value)
+				if ip == nil {
+					log.Printf("[DNS] Invalid IP address in AAAA record: %s", record.Value)
+					continue
+				}
 				msg.Answer = append(msg.Answer, &dns.AAAA{
 					Hdr: dns.RR_Header{
 						Name:   question.Name,
@@ -221,12 +355,16 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						Class:  dns.ClassINET,
 						Ttl:    record.TTL,
 					},
-					AAAA: net.ParseIP(record.Value),
+					AAAA: ip,
 				})
 			}
 
 		case dns.TypeCNAME:
 			if record.Type == "CNAME" {
+				targetDomain := record.Value
+				if !strings.HasSuffix(targetDomain, ".") {
+					targetDomain = targetDomain + "."
+				}
 				msg.Answer = append(msg.Answer, &dns.CNAME{
 					Hdr: dns.RR_Header{
 						Name:   question.Name,
@@ -234,7 +372,7 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						Class:  dns.ClassINET,
 						Ttl:    record.TTL,
 					},
-					Target: dns.Fqdn(record.Value),
+					Target: dns.Fqdn(targetDomain),
 				})
 			}
 

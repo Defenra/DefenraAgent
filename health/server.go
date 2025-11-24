@@ -9,11 +9,19 @@ import (
 	"time"
 
 	"github.com/defenra/agent/config"
+	"github.com/defenra/agent/firewall"
 )
 
 type HealthServer struct {
-	configMgr *config.ConfigManager
-	startTime time.Time
+	configMgr   *config.ConfigManager
+	startTime   time.Time
+	firewallMgr *firewall.IPTablesManager
+}
+
+var globalFirewallMgr *firewall.IPTablesManager
+
+func SetFirewallManager(mgr *firewall.IPTablesManager) {
+	globalFirewallMgr = mgr
 }
 
 type HealthResponse struct {
@@ -27,8 +35,9 @@ type HealthResponse struct {
 }
 
 type StatsResponse struct {
-	Config  ConfigStats  `json:"config"`
-	Runtime RuntimeStats `json:"runtime"`
+	Config    ConfigStats    `json:"config"`
+	Runtime   RuntimeStats   `json:"runtime"`
+	Firewall  FirewallStats  `json:"firewall"`
 }
 
 type ConfigStats struct {
@@ -47,6 +56,15 @@ type RuntimeStats struct {
 	NumCPU       int    `json:"num_cpu"`
 }
 
+type FirewallStats struct {
+	TotalBans            uint64 `json:"total_bans"`
+	ActiveBans           uint64 `json:"active_bans"`
+	L4Blocks             uint64 `json:"l4_blocks"`
+	TCPFlagBlocks        uint64 `json:"tcp_flag_blocks"`
+	RateLimitBlocks      uint64 `json:"rate_limit_blocks"`
+	ConnectionLimitBlocks uint64 `json:"connection_limit_blocks"`
+}
+
 func StartHealthCheck(configMgr *config.ConfigManager) {
 	server := &HealthServer{
 		configMgr: configMgr,
@@ -55,6 +73,7 @@ func StartHealthCheck(configMgr *config.ConfigManager) {
 
 	http.HandleFunc("/health", server.handleHealth)
 	http.HandleFunc("/stats", server.handleStats)
+	http.HandleFunc("/banned-ips", server.handleBannedIPs)
 
 	log.Println("[Health] Starting health check server on :8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -87,6 +106,8 @@ func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
+	firewallStats := firewall.GetStats()
+
 	response := StatsResponse{
 		Config: ConfigStats{
 			TotalPolls:    stats.TotalPolls,
@@ -101,6 +122,14 @@ func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
 			MemorySys:    formatBytes(m.Sys),
 			NumGoroutine: runtime.NumGoroutine(),
 			NumCPU:       runtime.NumCPU(),
+		},
+		Firewall: FirewallStats{
+			TotalBans:            firewallStats.TotalBans,
+			ActiveBans:           firewallStats.ActiveBans,
+			L4Blocks:             firewallStats.L4Blocks,
+			TCPFlagBlocks:        firewallStats.TCPFlagBlocks,
+			RateLimitBlocks:      firewallStats.RateLimitBlocks,
+			ConnectionLimitBlocks: firewallStats.ConnectionLimitBlocks,
 		},
 	}
 
@@ -144,4 +173,38 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm%ds", m, s)
 	}
 	return fmt.Sprintf("%ds", s)
+}
+
+type BannedIPsResponse struct {
+	BannedIPs []BannedIPInfo `json:"banned_ips"`
+}
+
+type BannedIPInfo struct {
+	IP        string    `json:"ip"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (h *HealthServer) handleBannedIPs(w http.ResponseWriter, r *http.Request) {
+	if globalFirewallMgr == nil {
+		http.Error(w, "Firewall manager not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	bannedIPsInfo := globalFirewallMgr.GetBannedIPsInfo()
+	
+	response := BannedIPsResponse{
+		BannedIPs: make([]BannedIPInfo, 0, len(bannedIPsInfo)),
+	}
+	
+	for _, ipInfo := range bannedIPsInfo {
+		response.BannedIPs = append(response.BannedIPs, BannedIPInfo{
+			IP:        ipInfo.IP,
+			ExpiresAt: ipInfo.ExpiresAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("[Health] Error encoding banned IPs response: %v", err)
+	}
 }

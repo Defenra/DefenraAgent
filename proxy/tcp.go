@@ -1,14 +1,18 @@
 package proxy
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/defenra/agent/config"
+	"github.com/defenra/agent/firewall"
+	"github.com/defenra/agent/health"
 )
 
 type ProxyManager struct {
@@ -16,13 +20,16 @@ type ProxyManager struct {
 	activeProxies map[int]*TCPProxy
 	mu            sync.RWMutex
 	stopChan      chan struct{}
+	l4Protection  *firewall.L4Protection
+	firewallMgr   *firewall.IPTablesManager
 }
 
 type TCPProxy struct {
-	config   config.Proxy
-	listener net.Listener
-	stopChan chan struct{}
-	stats    *ProxyStats
+	config       config.Proxy
+	listener     net.Listener
+	stopChan     chan struct{}
+	stats        *ProxyStats
+	proxyManager *ProxyManager
 }
 
 type ProxyStats struct {
@@ -34,11 +41,19 @@ type ProxyStats struct {
 }
 
 func StartProxyManager(configMgr *config.ConfigManager) {
+	l4Protection := firewall.NewL4Protection(100, 1000, 60*time.Second)
+	firewallMgr := firewall.GetIPTablesManager()
+	health.SetFirewallManager(firewallMgr)
+
 	manager := &ProxyManager{
 		configMgr:     configMgr,
 		activeProxies: make(map[int]*TCPProxy),
 		stopChan:      make(chan struct{}),
+		l4Protection:  l4Protection,
+		firewallMgr:   firewallMgr,
 	}
+
+	globalProxyManager = manager
 
 	go manager.watchProxies()
 
@@ -113,10 +128,11 @@ func (pm *ProxyManager) startTCPProxy(proxyConfig config.Proxy) {
 	}
 
 	proxy := &TCPProxy{
-		config:   proxyConfig,
-		listener: listener,
-		stopChan: make(chan struct{}),
-		stats:    &ProxyStats{},
+		config:       proxyConfig,
+		listener:     listener,
+		stopChan:     make(chan struct{}),
+		stats:        &ProxyStats{},
+		proxyManager: pm,
 	}
 
 	pm.mu.Lock()
@@ -165,13 +181,55 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		p.stats.mu.Unlock()
 	}()
 
-	targetAddr := fmt.Sprintf("%s:%d", p.config.TargetHost, p.config.TargetPort)
+	clientIP := extractIP(clientConn.RemoteAddr())
+
+	// проверка iptables банов
+	if p.proxyManager != nil && p.proxyManager.firewallMgr != nil {
+		if p.proxyManager.firewallMgr.IsBanned(clientIP) {
+			log.Printf("[TCP Proxy] Connection blocked: IP %s is banned", clientIP)
+			return
+		}
+	}
+
+	// L4 защита - проверка лимита соединений и rate limit
+	if p.proxyManager != nil && p.proxyManager.l4Protection != nil {
+		allowed, reason := p.proxyManager.l4Protection.CheckConnection(clientIP)
+		if !allowed {
+			log.Printf("[TCP Proxy] Connection blocked: %s", reason)
+			// блокируем через iptables
+			if p.proxyManager.firewallMgr != nil {
+				p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour)
+			}
+			return
+		}
+		defer p.proxyManager.l4Protection.ReleaseConnection(clientIP)
+
+		allowed, reason = p.proxyManager.l4Protection.CheckRateLimit(clientIP)
+		if !allowed {
+			log.Printf("[TCP Proxy] Rate limit exceeded: %s", reason)
+			if p.proxyManager.firewallMgr != nil {
+				p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour)
+			}
+			return
+		}
+	}
+
+	// используем net.JoinHostPort для правильной обработки IPv6
+	targetAddr := net.JoinHostPort(p.config.TargetHost, fmt.Sprintf("%d", p.config.TargetPort))
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("[TCP Proxy] Failed to connect to backend %s: %v", targetAddr, err)
 		return
 	}
 	defer targetConn.Close()
+
+	// отправляем PROXY protocol v2 если включен
+	if p.config.ProxyProtocol {
+		if err := sendProxyProtocolV2(targetConn, clientConn); err != nil {
+			log.Printf("[TCP Proxy] Failed to send PROXY protocol: %v", err)
+			return
+		}
+	}
 
 	done := make(chan struct{}, 2)
 
@@ -192,6 +250,91 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	}()
 
 	<-done
+}
+
+// sendProxyProtocolV2 отправляет PROXY protocol v2 header перед данными клиента
+func sendProxyProtocolV2(targetConn net.Conn, clientConn net.Conn) error {
+	clientAddr := clientConn.RemoteAddr()
+	proxyAddr := clientConn.LocalAddr()
+
+	clientTCPAddr, ok := clientAddr.(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("client address is not TCPAddr")
+	}
+
+	proxyTCPAddr, ok := proxyAddr.(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("proxy address is not TCPAddr")
+	}
+
+	// signature для PROXY protocol v2
+	signature := []byte{0x0D, 0x0A, 0x0D, 0x0A, 0x00, 0x0D, 0x0A, 0x51, 0x55, 0x49, 0x54, 0x0A}
+
+	// version (4 bits) + command (4 bits)
+	// version = 2, command = PROXY (0x1)
+	versionCommand := byte(0x21)
+
+	var family byte
+	var addrLen int
+	var srcAddr, dstAddr []byte
+
+	// определяем IPv4 или IPv6
+	if clientTCPAddr.IP.To4() != nil && proxyTCPAddr.IP.To4() != nil {
+		// IPv4
+		family = 0x11 // IPv4 + TCP
+		addrLen = 12  // 4 (src) + 4 (dst) + 2 (src port) + 2 (dst port)
+		srcAddr = clientTCPAddr.IP.To4()
+		dstAddr = proxyTCPAddr.IP.To4()
+	} else if clientTCPAddr.IP.To16() != nil && proxyTCPAddr.IP.To16() != nil {
+		// IPv6
+		family = 0x21 // IPv6 + TCP
+		addrLen = 36  // 16 (src) + 16 (dst) + 2 (src port) + 2 (dst port)
+		srcAddr = clientTCPAddr.IP.To16()
+		dstAddr = proxyTCPAddr.IP.To16()
+	} else {
+		// UNSPEC (если адреса не совпадают по типу)
+		family = 0x00
+		addrLen = 0
+	}
+
+	// длина адресных данных (2 байта, big-endian)
+	lengthBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(lengthBytes, uint16(addrLen))
+
+	// собираем PROXY protocol header
+	header := make([]byte, 0, 16+addrLen)
+	header = append(header, signature...)
+	header = append(header, versionCommand)
+	header = append(header, family)
+	header = append(header, lengthBytes...)
+
+	if addrLen > 0 {
+		header = append(header, srcAddr...)
+		header = append(header, dstAddr...)
+
+		// порты (2 байта каждый, big-endian)
+		srcPort := make([]byte, 2)
+		dstPort := make([]byte, 2)
+		binary.BigEndian.PutUint16(srcPort, uint16(clientTCPAddr.Port))
+		binary.BigEndian.PutUint16(dstPort, uint16(proxyTCPAddr.Port))
+		header = append(header, srcPort...)
+		header = append(header, dstPort...)
+	}
+
+	// отправляем header
+	if _, err := targetConn.Write(header); err != nil {
+		return fmt.Errorf("failed to write PROXY protocol header: %w", err)
+	}
+
+	return nil
+}
+
+func extractIP(addr net.Addr) string {
+	addrStr := addr.String()
+	if idx := strings.LastIndex(addrStr, ":"); idx != -1 {
+		return addrStr[:idx]
+	}
+	return addrStr
 }
 
 func (p *TCPProxy) Stop() {
