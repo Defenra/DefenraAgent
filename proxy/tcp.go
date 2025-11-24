@@ -53,8 +53,6 @@ func StartProxyManager(configMgr *config.ConfigManager) {
 		firewallMgr:   firewallMgr,
 	}
 
-	globalProxyManager = manager
-
 	go manager.watchProxies()
 
 	<-manager.stopChan
@@ -198,7 +196,9 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 			log.Printf("[TCP Proxy] Connection blocked: %s", reason)
 			// блокируем через iptables
 			if p.proxyManager.firewallMgr != nil {
-				p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour)
+				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+					log.Printf("[TCP Proxy] Failed to ban IP %s: %v", clientIP, err)
+				}
 			}
 			return
 		}
@@ -208,7 +208,9 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		if !allowed {
 			log.Printf("[TCP Proxy] Rate limit exceeded: %s", reason)
 			if p.proxyManager.firewallMgr != nil {
-				p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour)
+				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+					log.Printf("[TCP Proxy] Failed to ban IP %s: %v", clientIP, err)
+				}
 			}
 			return
 		}

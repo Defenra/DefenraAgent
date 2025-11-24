@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 )
@@ -158,7 +157,9 @@ func (m *IPTablesManager) cleanupExpired() {
 			m.mu.Unlock()
 
 			for _, ip := range expired {
-				m.UnbanIP(ip)
+				if err := m.UnbanIP(ip); err != nil {
+					log.Printf("[Firewall] Warning: failed to unban expired IP %s: %v", ip, err)
+				}
 			}
 
 			if len(expired) > 0 {
@@ -239,21 +240,4 @@ func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration) error 
 
 	log.Printf("[Firewall] Banned CIDR %s for %v", cidr, duration)
 	return nil
-}
-
-// checkIPTablesAvailable проверяет доступность iptables
-func checkIPTablesAvailable() bool {
-	cmd := exec.Command("iptables", "--version")
-	if err := cmd.Run(); err != nil {
-		return false
-	}
-
-	// проверяем есть ли права root (для работы с iptables нужен root)
-	cmd = exec.Command("id", "-u")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-
-	return strings.TrimSpace(string(output)) == "0"
 }

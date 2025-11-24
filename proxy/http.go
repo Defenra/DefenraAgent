@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,8 +19,6 @@ import (
 var (
 	globalHTTPServer  *HTTPProxyServer
 	globalHTTPSServer *HTTPSProxyServer
-	globalProxyManager *ProxyManager
-	proxyServersOnce  sync.Once
 )
 
 type HTTPProxyServer struct {
