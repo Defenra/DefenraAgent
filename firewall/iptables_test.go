@@ -155,8 +155,12 @@ func TestIPTablesManager(t *testing.T) {
 		manager := GetIPTablesManager()
 		ip := "192.168.100.7"
 
-		manager.BanIP(ip, 1*time.Minute)
-		manager.BanIP(ip, 2*time.Minute) // обновляем duration
+		if err := manager.BanIP(ip, 1*time.Minute); err != nil {
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
+		if err := manager.BanIP(ip, 2*time.Minute); err != nil { // обновляем duration
+			t.Logf("BanIP returned error (expected if not root): %v", err)
+		}
 
 		// IP должен оставаться забаненным
 		if !manager.IsBanned(ip) {
