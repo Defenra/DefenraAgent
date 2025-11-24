@@ -35,6 +35,11 @@ func NewLuaWAF() *LuaWAF {
 }
 
 func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
+	// Skip execution if Lua code is empty
+	if strings.TrimSpace(luaCode) == "" {
+		return false, WAFResponse{}
+	}
+	
 	L := w.pool.Get().(*lua.LState)
 	defer w.pool.Put(L)
 
