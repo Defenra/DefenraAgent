@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/defenra/agent/config"
@@ -30,6 +31,7 @@ type TCPProxy struct {
 	stopChan     chan struct{}
 	stats        *ProxyStats
 	proxyManager *ProxyManager
+	clients      *ClientTracker
 }
 
 type ProxyStats struct {
@@ -38,6 +40,94 @@ type ProxyStats struct {
 	BytesSent         uint64
 	BytesReceived     uint64
 	mu                sync.RWMutex
+}
+
+func (ps *ProxyStats) GetStats() (totalConns, activeConns, bytesSent, bytesReceived uint64) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.TotalConnections, ps.ActiveConnections, ps.BytesSent, ps.BytesReceived
+}
+
+type ClientConnection struct {
+	IP            string
+	ConnectedAt   time.Time
+	LastActivity  time.Time
+	BytesSent     uint64
+	BytesReceived uint64
+	ProxyID       string
+	ProxyPort     int
+}
+
+type ClientTracker struct {
+	mu      sync.RWMutex
+	clients map[string]*ClientConnection // key: IP address
+}
+
+func NewClientTracker() *ClientTracker {
+	return &ClientTracker{
+		clients: make(map[string]*ClientConnection),
+	}
+}
+
+func (ct *ClientTracker) AddClient(ip string, proxyID string, proxyPort int) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	ct.clients[ip] = &ClientConnection{
+		IP:           ip,
+		ConnectedAt:  time.Now(),
+		LastActivity: time.Now(),
+		ProxyID:      proxyID,
+		ProxyPort:    proxyPort,
+	}
+}
+
+func (ct *ClientTracker) UpdateTraffic(ip string, sent, received uint64) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	if client, exists := ct.clients[ip]; exists {
+		atomic.AddUint64(&client.BytesSent, sent)
+		atomic.AddUint64(&client.BytesReceived, received)
+		client.LastActivity = time.Now()
+	}
+}
+
+func (ct *ClientTracker) RemoveClient(ip string) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	delete(ct.clients, ip)
+}
+
+func (ct *ClientTracker) GetClients() []*health.ClientConnection {
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
+
+	clients := make([]*health.ClientConnection, 0, len(ct.clients))
+	for _, client := range ct.clients {
+		// копируем данные для безопасности
+		clientCopy := &health.ClientConnection{
+			IP:            client.IP,
+			ConnectedAt:   client.ConnectedAt,
+			LastActivity:  client.LastActivity,
+			BytesSent:     atomic.LoadUint64(&client.BytesSent),
+			BytesReceived: atomic.LoadUint64(&client.BytesReceived),
+			ProxyID:       client.ProxyID,
+			ProxyPort:     client.ProxyPort,
+		}
+		clients = append(clients, clientCopy)
+	}
+	return clients
+}
+
+var globalClientTracker *ClientTracker
+var globalClientTrackerOnce sync.Once
+
+func GetGlobalClientTracker() *ClientTracker {
+	globalClientTrackerOnce.Do(func() {
+		globalClientTracker = NewClientTracker()
+	})
+	return globalClientTracker
 }
 
 func StartProxyManager(configMgr *config.ConfigManager) {
@@ -52,6 +142,8 @@ func StartProxyManager(configMgr *config.ConfigManager) {
 		l4Protection:  l4Protection,
 		firewallMgr:   firewallMgr,
 	}
+
+	globalProxyManager = manager
 
 	go manager.watchProxies()
 
@@ -151,6 +243,7 @@ func (pm *ProxyManager) startTCPProxy(proxyConfig config.Proxy) {
 		stopChan:     make(chan struct{}),
 		stats:        &ProxyStats{},
 		proxyManager: pm,
+		clients:      GetGlobalClientTracker(),
 	}
 
 	pm.mu.Lock()
@@ -161,6 +254,23 @@ func (pm *ProxyManager) startTCPProxy(proxyConfig config.Proxy) {
 		proxyConfig.Name, proxyConfig.ListenPort, proxyConfig.TargetHost, proxyConfig.TargetPort)
 
 	go proxy.Accept()
+}
+
+func (pm *ProxyManager) GetProxyStats() map[string]*ProxyStats {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	stats := make(map[string]*ProxyStats)
+	for port, proxy := range pm.activeProxies {
+		stats[fmt.Sprintf("%d", port)] = proxy.stats
+	}
+	return stats
+}
+
+var globalProxyManager *ProxyManager
+
+func GetGlobalProxyManager() *ProxyManager {
+	return globalProxyManager
 }
 
 func (p *TCPProxy) Accept() {
@@ -192,14 +302,24 @@ func (p *TCPProxy) Accept() {
 }
 
 func (p *TCPProxy) handleConnection(clientConn net.Conn) {
+	startTime := time.Now()
+	clientIP := extractIP(clientConn.RemoteAddr())
+
+	// добавляем клиента в трекер
+	p.clients.AddClient(clientIP, p.config.ID, p.config.ListenPort)
+
 	defer clientConn.Close()
 	defer func() {
 		p.stats.mu.Lock()
 		p.stats.ActiveConnections--
 		p.stats.mu.Unlock()
-	}()
 
-	clientIP := extractIP(clientConn.RemoteAddr())
+		// удаляем клиента из трекера после отключения
+		p.clients.RemoveClient(clientIP)
+
+		duration := time.Since(startTime)
+		log.Printf("[TCP Proxy] Connection closed: %s (duration: %v)", clientIP, duration)
+	}()
 
 	// проверка iptables банов
 	if p.proxyManager != nil && p.proxyManager.firewallMgr != nil {
@@ -254,9 +374,11 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	}
 
 	done := make(chan struct{}, 2)
+	var bytesSent, bytesReceived uint64
 
 	go func() {
 		n, _ := io.Copy(targetConn, clientConn)
+		atomic.AddUint64(&bytesReceived, uint64(n))
 		p.stats.mu.Lock()
 		p.stats.BytesReceived += uint64(n)
 		p.stats.mu.Unlock()
@@ -265,6 +387,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 
 	go func() {
 		n, _ := io.Copy(clientConn, targetConn)
+		atomic.AddUint64(&bytesSent, uint64(n))
 		p.stats.mu.Lock()
 		p.stats.BytesSent += uint64(n)
 		p.stats.mu.Unlock()
@@ -272,6 +395,9 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 	}()
 
 	<-done
+
+	// обновляем трафик клиента
+	p.clients.UpdateTraffic(clientIP, bytesSent, bytesReceived)
 }
 
 // sendProxyProtocolV2 отправляет PROXY protocol v2 header перед данными клиента

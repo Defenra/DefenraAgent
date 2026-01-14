@@ -52,6 +52,9 @@ func main() {
 	log.Println("Starting Health Check on :8080...")
 	go health.StartHealthCheck(configMgr)
 
+	// регистрируем ClientTracker в health server
+	health.SetClientTracker(proxy.GetGlobalClientTracker())
+
 	// настраиваем статистику коллектор
 	statsCollector := stats.GetCollector()
 	statsCollector.SetConfig(coreURL, agentID, agentKey)

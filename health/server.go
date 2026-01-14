@@ -73,6 +73,7 @@ func StartHealthCheck(configMgr *config.ConfigManager) {
 	http.HandleFunc("/health", server.handleHealth)
 	http.HandleFunc("/stats", server.handleStats)
 	http.HandleFunc("/banned-ips", server.handleBannedIPs)
+	http.HandleFunc("/clients", server.handleClients)
 
 	log.Println("[Health] Starting health check server on :8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -205,5 +206,39 @@ func (h *HealthServer) handleBannedIPs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("[Health] Error encoding banned IPs response: %v", err)
+	}
+}
+
+type ClientsResponse struct {
+	Clients []ClientInfo `json:"clients"`
+	Total   int          `json:"total"`
+}
+
+type ClientInfo struct {
+	IP            string `json:"ip"`
+	ConnectedAt   string `json:"connected_at"`
+	LastActivity  string `json:"last_activity"`
+	Duration      string `json:"duration"`
+	BytesSent     uint64 `json:"bytes_sent"`
+	BytesReceived uint64 `json:"bytes_received"`
+	TotalBytes    uint64 `json:"total_bytes"`
+	ProxyID       string `json:"proxy_id"`
+	ProxyPort     int    `json:"proxy_port"`
+}
+
+func (h *HealthServer) handleClients(w http.ResponseWriter, r *http.Request) {
+	// Получаем параметр port если указан
+	portFilter := r.URL.Query().Get("port")
+
+	clients := getActiveClients(portFilter)
+
+	response := ClientsResponse{
+		Clients: clients,
+		Total:   len(clients),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("[Health] Error encoding clients response: %v", err)
 	}
 }
