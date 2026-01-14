@@ -13,8 +13,8 @@ import (
 )
 
 type HealthServer struct {
-	configMgr   *config.ConfigManager
-	startTime   time.Time
+	configMgr *config.ConfigManager
+	startTime time.Time
 }
 
 var globalFirewallMgr *firewall.IPTablesManager
@@ -34,9 +34,9 @@ type HealthResponse struct {
 }
 
 type StatsResponse struct {
-	Config    ConfigStats    `json:"config"`
-	Runtime   RuntimeStats   `json:"runtime"`
-	Firewall  FirewallStats  `json:"firewall"`
+	Config   ConfigStats   `json:"config"`
+	Runtime  RuntimeStats  `json:"runtime"`
+	Firewall FirewallStats `json:"firewall"`
 }
 
 type ConfigStats struct {
@@ -56,11 +56,11 @@ type RuntimeStats struct {
 }
 
 type FirewallStats struct {
-	TotalBans            uint64 `json:"total_bans"`
-	ActiveBans           uint64 `json:"active_bans"`
-	L4Blocks             uint64 `json:"l4_blocks"`
-	TCPFlagBlocks        uint64 `json:"tcp_flag_blocks"`
-	RateLimitBlocks      uint64 `json:"rate_limit_blocks"`
+	TotalBans             uint64 `json:"total_bans"`
+	ActiveBans            uint64 `json:"active_bans"`
+	L4Blocks              uint64 `json:"l4_blocks"`
+	TCPFlagBlocks         uint64 `json:"tcp_flag_blocks"`
+	RateLimitBlocks       uint64 `json:"rate_limit_blocks"`
 	ConnectionLimitBlocks uint64 `json:"connection_limit_blocks"`
 }
 
@@ -123,11 +123,11 @@ func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
 			NumCPU:       runtime.NumCPU(),
 		},
 		Firewall: FirewallStats{
-			TotalBans:            firewallStats.TotalBans,
-			ActiveBans:           firewallStats.ActiveBans,
-			L4Blocks:             firewallStats.L4Blocks,
-			TCPFlagBlocks:        firewallStats.TCPFlagBlocks,
-			RateLimitBlocks:      firewallStats.RateLimitBlocks,
+			TotalBans:             firewallStats.TotalBans,
+			ActiveBans:            firewallStats.ActiveBans,
+			L4Blocks:              firewallStats.L4Blocks,
+			TCPFlagBlocks:         firewallStats.TCPFlagBlocks,
+			RateLimitBlocks:       firewallStats.RateLimitBlocks,
 			ConnectionLimitBlocks: firewallStats.ConnectionLimitBlocks,
 		},
 	}
@@ -190,11 +190,11 @@ func (h *HealthServer) handleBannedIPs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bannedIPsInfo := globalFirewallMgr.GetBannedIPsInfo()
-	
+
 	response := BannedIPsResponse{
 		BannedIPs: make([]BannedIPInfo, 0, len(bannedIPsInfo)),
 	}
-	
+
 	for _, ipInfo := range bannedIPsInfo {
 		response.BannedIPs = append(response.BannedIPs, BannedIPInfo{
 			IP:        ipInfo.IP,

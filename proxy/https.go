@@ -40,7 +40,7 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 		rateLimiter: rateLimiter,
 		firewallMgr: firewallMgr,
 	}
-	
+
 	globalHTTPSServer = server
 
 	tlsConfig := &tls.Config{
@@ -131,8 +131,8 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		// rate limiting на L7
 		if domainConfig.HTTPProxy.AntiDDoS.RateLimit != nil {
 			rateLimitConfig := RateLimitConfig{
-				WindowSeconds:       domainConfig.HTTPProxy.AntiDDoS.RateLimit.WindowSeconds,
-				MaxRequests:         domainConfig.HTTPProxy.AntiDDoS.RateLimit.MaxRequests,
+				WindowSeconds:        domainConfig.HTTPProxy.AntiDDoS.RateLimit.WindowSeconds,
+				MaxRequests:          domainConfig.HTTPProxy.AntiDDoS.RateLimit.MaxRequests,
 				BlockDurationSeconds: domainConfig.HTTPProxy.AntiDDoS.BlockDurationSeconds,
 			}
 
@@ -183,12 +183,12 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 	if domainConfig.LuaCode != "" {
 		blocked, response := s.wafEngine.Execute(domainConfig.LuaCode, r)
-		
+
 		// Apply headers from WAF (even if not blocked, for security headers)
 		for key, value := range response.Headers {
 			w.Header().Set(key, value)
 		}
-		
+
 		if blocked {
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
 			log.Printf("[HTTPS] Request blocked by WAF: %s", r.Host+r.RequestURI)
@@ -311,11 +311,11 @@ func (s *HTTPSProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
 
 func (s *HTTPSProxyServer) GetStats() HTTPStats {
 	return HTTPStats{
-		TotalRequests:      atomic.LoadUint64(&s.stats.TotalRequests),
-		BlockedRequests:    atomic.LoadUint64(&s.stats.BlockedRequests),
-		RateLimitBlocks:    atomic.LoadUint64(&s.stats.RateLimitBlocks),
-		FirewallBlocks:     atomic.LoadUint64(&s.stats.FirewallBlocks),
-		ProxyErrors:        atomic.LoadUint64(&s.stats.ProxyErrors),
+		TotalRequests:   atomic.LoadUint64(&s.stats.TotalRequests),
+		BlockedRequests: atomic.LoadUint64(&s.stats.BlockedRequests),
+		RateLimitBlocks: atomic.LoadUint64(&s.stats.RateLimitBlocks),
+		FirewallBlocks:  atomic.LoadUint64(&s.stats.FirewallBlocks),
+		ProxyErrors:     atomic.LoadUint64(&s.stats.ProxyErrors),
 	}
 }
 

@@ -11,7 +11,7 @@ type Config struct {
 }
 
 type Domain struct {
-	ID         string            `json:"id,omitempty"`       // MongoDB ObjectId домена
+	ID         string            `json:"id,omitempty"` // MongoDB ObjectId домена
 	Domain     string            `json:"domain"`
 	DNSRecords []DNSRecord       `json:"dnsRecords"`
 	GeoDNSMap  map[string]string `json:"geoDnsMap"`
@@ -30,18 +30,18 @@ type DNSRecord struct {
 }
 
 type HTTPProxy struct {
-	Type     string     `json:"type"`
-	Enabled  bool       `json:"enabled"`
-	AntiDDoS *AntiDDoS  `json:"antiDDoS,omitempty"`
+	Type     string    `json:"type"`
+	Enabled  bool      `json:"enabled"`
+	AntiDDoS *AntiDDoS `json:"antiDDoS,omitempty"`
 }
 
 type AntiDDoS struct {
-	Enabled            bool           `json:"enabled"`
-	RateLimit          *RateLimit     `json:"rateLimit,omitempty"`
-	BlockDurationSeconds int          `json:"blockDurationSeconds"`
-	Slowloris          *Slowloris     `json:"slowloris,omitempty"`
-	IPWhitelist        []string       `json:"ipWhitelist,omitempty"`
-	ProxyIPHeaders     []string       `json:"proxyIpHeaders,omitempty"`
+	Enabled              bool       `json:"enabled"`
+	RateLimit            *RateLimit `json:"rateLimit,omitempty"`
+	BlockDurationSeconds int        `json:"blockDurationSeconds"`
+	Slowloris            *Slowloris `json:"slowloris,omitempty"`
+	IPWhitelist          []string   `json:"ipWhitelist,omitempty"`
+	ProxyIPHeaders       []string   `json:"proxyIpHeaders,omitempty"`
 }
 
 type RateLimit struct {
@@ -63,14 +63,14 @@ type SSL struct {
 }
 
 type Proxy struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Protocol       string `json:"type"`            // Core sends "type", not "protocol"
-	ListenPort     int    `json:"sourcePort"`      // Core sends "sourcePort", not "listenPort"
-	TargetHost     string `json:"destinationHost"` // Core sends "destinationHost", not "targetHost"
-	TargetPort     int    `json:"destinationPort"` // Core sends "destinationPort", not "targetPort"
-	Enabled        bool   `json:"enabled"`
-	ProxyProtocol  bool   `json:"proxyProtocol"`   // включить PROXY protocol v2 для проброса source IP
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Protocol      string `json:"type"`            // Core sends "type", not "protocol"
+	ListenPort    int    `json:"sourcePort"`      // Core sends "sourcePort", not "listenPort"
+	TargetHost    string `json:"destinationHost"` // Core sends "destinationHost", not "targetHost"
+	TargetPort    int    `json:"destinationPort"` // Core sends "destinationPort", not "targetPort"
+	Enabled       bool   `json:"enabled"`
+	ProxyProtocol bool   `json:"proxyProtocol"` // включить PROXY protocol v2 для проброса source IP
 }
 
 type PollRequest struct {

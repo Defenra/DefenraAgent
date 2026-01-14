@@ -112,7 +112,7 @@ func (w *LuaWAF) Execute(luaCode string, r *http.Request) (bool, WAFResponse) {
 				log.Printf("[WAF] Invalid _body type: expected string, got %s", bd.Type())
 			}
 		}
-		
+
 		// Use default body if empty
 		if body == "" {
 			body = "Blocked by WAF"
@@ -176,7 +176,7 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 	// ngx.say() - append text to response body
 	L.SetField(ngxTable, "say", L.NewFunction(func(L *lua.LState) int {
 		text := L.CheckString(1)
-		
+
 		// Get current body and append
 		currentBody := L.GetGlobal("_body")
 		if currentBody == lua.LNil {
@@ -192,7 +192,7 @@ func (w *LuaWAF) setupNginxAPI(L *lua.LState) {
 	// ngx.print() - same as ngx.say() but without newline (we treat them the same)
 	L.SetField(ngxTable, "print", L.NewFunction(func(L *lua.LState) int {
 		text := L.CheckString(1)
-		
+
 		// Get current body and append
 		currentBody := L.GetGlobal("_body")
 		if currentBody == lua.LNil {

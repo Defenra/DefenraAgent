@@ -8,11 +8,11 @@ import (
 var globalStats = &FirewallStats{}
 
 type FirewallStats struct {
-	TotalBans         uint64
-	ActiveBans        uint64
-	L4Blocks          uint64
-	TCPFlagBlocks     uint64
-	RateLimitBlocks   uint64
+	TotalBans             uint64
+	ActiveBans            uint64
+	L4Blocks              uint64
+	TCPFlagBlocks         uint64
+	RateLimitBlocks       uint64
 	ConnectionLimitBlocks uint64
 }
 
@@ -46,11 +46,11 @@ func IncConnectionLimitBlocks() {
 
 func GetStats() FirewallStats {
 	return FirewallStats{
-		TotalBans:            atomic.LoadUint64(&globalStats.TotalBans),
-		ActiveBans:           atomic.LoadUint64(&globalStats.ActiveBans),
-		L4Blocks:             atomic.LoadUint64(&globalStats.L4Blocks),
-		TCPFlagBlocks:        atomic.LoadUint64(&globalStats.TCPFlagBlocks),
-		RateLimitBlocks:      atomic.LoadUint64(&globalStats.RateLimitBlocks),
+		TotalBans:             atomic.LoadUint64(&globalStats.TotalBans),
+		ActiveBans:            atomic.LoadUint64(&globalStats.ActiveBans),
+		L4Blocks:              atomic.LoadUint64(&globalStats.L4Blocks),
+		TCPFlagBlocks:         atomic.LoadUint64(&globalStats.TCPFlagBlocks),
+		RateLimitBlocks:       atomic.LoadUint64(&globalStats.RateLimitBlocks),
 		ConnectionLimitBlocks: atomic.LoadUint64(&globalStats.ConnectionLimitBlocks),
 	}
 }
@@ -82,7 +82,7 @@ func SetProxyStats(key string, value interface{}) {
 func GetProxyStats() map[string]interface{} {
 	proxyStatsCollector.mu.RLock()
 	defer proxyStatsCollector.mu.RUnlock()
-	
+
 	result := make(map[string]interface{})
 	for k, v := range proxyStatsCollector.stats {
 		result[k] = v

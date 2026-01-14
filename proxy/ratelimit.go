@@ -15,14 +15,14 @@ type RateLimiter struct {
 }
 
 type clientTracker struct {
-	requests   []time.Time
+	requests     []time.Time
 	blockedUntil time.Time
-	mu          sync.Mutex
+	mu           sync.Mutex
 }
 
 type RateLimitConfig struct {
-	WindowSeconds       int
-	MaxRequests         int
+	WindowSeconds        int
+	MaxRequests          int
 	BlockDurationSeconds int
 }
 
