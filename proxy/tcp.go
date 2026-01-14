@@ -79,7 +79,7 @@ func (pm *ProxyManager) updateProxies() {
 
 	currentPorts := make(map[int]bool)
 	enabledPorts := make(map[int]bool)
-	
+
 	// собираем список активных и включенных прокси
 	for _, proxy := range proxies {
 		currentPorts[proxy.ListenPort] = true
@@ -119,6 +119,12 @@ func (pm *ProxyManager) startProxy(proxyConfig config.Proxy) {
 	// Skip if protocol is empty or invalid
 	if proxyConfig.Protocol == "" {
 		log.Printf("[Proxy] Skipping proxy with empty protocol: %s (port: %d)", proxyConfig.Name, proxyConfig.ListenPort)
+		return
+	}
+
+	// Skip if proxy is disabled
+	if !proxyConfig.Enabled {
+		log.Printf("[Proxy] Skipping disabled proxy: %s (port: %d)", proxyConfig.Name, proxyConfig.ListenPort)
 		return
 	}
 

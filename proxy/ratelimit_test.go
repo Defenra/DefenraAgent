@@ -11,8 +11,8 @@ func TestRateLimiter(t *testing.T) {
 		rl := NewRateLimiter()
 		ip := "192.168.1.100"
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         5,
+			WindowSeconds:        1,
+			MaxRequests:          5,
 			BlockDurationSeconds: 60,
 		}
 
@@ -38,8 +38,8 @@ func TestRateLimiter(t *testing.T) {
 		rl := NewRateLimiter()
 		ip := "192.168.1.101"
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         3,
+			WindowSeconds:        1,
+			MaxRequests:          3,
 			BlockDurationSeconds: 60,
 		}
 
@@ -62,8 +62,8 @@ func TestRateLimiter(t *testing.T) {
 		rl := NewRateLimiter()
 		ip := "192.168.1.102"
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         2,
+			WindowSeconds:        1,
+			MaxRequests:          2,
 			BlockDurationSeconds: 1,
 		}
 
@@ -91,8 +91,8 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("multiple ips", func(t *testing.T) {
 		rl := NewRateLimiter()
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         2,
+			WindowSeconds:        1,
+			MaxRequests:          2,
 			BlockDurationSeconds: 60,
 		}
 
@@ -115,10 +115,10 @@ func TestRateLimiter(t *testing.T) {
 		rl := NewRateLimiter()
 
 		testCases := []struct {
-			name     string
-			headers  map[string]string
+			name       string
+			headers    map[string]string
 			remoteAddr string
-			expected string
+			expected   string
 		}{
 			{
 				name: "x-forwarded-for",
@@ -149,10 +149,10 @@ func TestRateLimiter(t *testing.T) {
 				expected: "192.168.1.53",
 			},
 			{
-				name: "remote addr fallback",
-				headers: map[string]string{},
+				name:       "remote addr fallback",
+				headers:    map[string]string{},
 				remoteAddr: "192.168.1.54:12345",
-				expected: "192.168.1.54",
+				expected:   "192.168.1.54",
 			},
 		}
 
@@ -177,8 +177,8 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("cleanup old clients", func(t *testing.T) {
 		rl := NewRateLimiter()
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         1,
+			WindowSeconds:        1,
+			MaxRequests:          1,
 			BlockDurationSeconds: 1,
 		}
 
@@ -203,8 +203,8 @@ func TestRateLimiter(t *testing.T) {
 		rl := NewRateLimiter()
 		ip := "192.168.1.400"
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         2,
+			WindowSeconds:        1,
+			MaxRequests:          2,
 			BlockDurationSeconds: 60,
 		}
 

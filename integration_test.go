@@ -26,8 +26,8 @@ func TestIntegration_AntiDDoS(t *testing.T) {
 
 		// 2. проверяем rate limiting на L7
 		config := proxy.RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         5,
+			WindowSeconds:        1,
+			MaxRequests:          5,
 			BlockDurationSeconds: 60,
 		}
 
@@ -83,8 +83,8 @@ func TestIntegration_AntiDDoS(t *testing.T) {
 		// Rate limit атака
 		ip2 := "10.0.0.2"
 		config := proxy.RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         10,
+			WindowSeconds:        1,
+			MaxRequests:          10,
 			BlockDurationSeconds: 60,
 		}
 

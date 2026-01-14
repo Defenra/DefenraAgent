@@ -204,7 +204,7 @@ func TestLuaWAF_UserAgentBlocking(t *testing.T) {
 			blocked, _ := waf.Execute(luaCode, req)
 
 			if blocked != tt.wantBlock {
-				t.Errorf("Execute() blocked = %v, want %v for User-Agent: %s", 
+				t.Errorf("Execute() blocked = %v, want %v for User-Agent: %s",
 					blocked, tt.wantBlock, tt.userAgent)
 			}
 		})

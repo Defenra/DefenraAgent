@@ -56,7 +56,7 @@ func (g *GeoIPService) lookupLocation(ip string) string {
 	}
 
 	countryCode := strings.ToLower(record.Country.IsoCode)
-	
+
 	// Return country code directly - routing is handled by GeoDNS map from API
 	if countryCode != "" {
 		return countryCode
@@ -64,7 +64,7 @@ func (g *GeoIPService) lookupLocation(ip string) string {
 
 	// Fallback to continent for unknown countries
 	continent := strings.ToLower(record.Continent.Code)
-	
+
 	continentMap := map[string]string{
 		"eu": "de", // Europe -> Germany
 		"na": "us", // North America -> USA

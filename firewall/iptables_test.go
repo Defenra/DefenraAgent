@@ -9,7 +9,7 @@ func TestIPTablesManager(t *testing.T) {
 	t.Run("singleton pattern", func(t *testing.T) {
 		manager1 := GetIPTablesManager()
 		manager2 := GetIPTablesManager()
-		
+
 		if manager1 != manager2 {
 			t.Error("GetIPTablesManager should return the same instance")
 		}

@@ -12,7 +12,7 @@ import (
 func TestHTTPProxy_Whitelist(t *testing.T) {
 	// создаем тестовый config manager
 	configMgr := config.NewConfigManager("http://test", "test-id", "test-key")
-	
+
 	// создаем тестовую домен конфигурацию с whitelist
 	testDomain := &config.Domain{
 		Domain: "test.example.com",
@@ -32,8 +32,8 @@ func TestHTTPProxy_Whitelist(t *testing.T) {
 	t.Run("whitelist single IP", func(t *testing.T) {
 		rl := NewRateLimiter()
 		config := RateLimitConfig{
-			WindowSeconds:       1,
-			MaxRequests:         100,
+			WindowSeconds:        1,
+			MaxRequests:          100,
 			BlockDurationSeconds: 60,
 		}
 
@@ -56,7 +56,7 @@ func TestHTTPProxy_Whitelist(t *testing.T) {
 		rl := NewRateLimiter()
 		req := httptest.NewRequest("GET", "http://test.example.com/", nil)
 		req.Header.Set("X-Real-IP", "10.0.0.50")
-		
+
 		ip := rl.GetClientIP(req)
 		if ip != "10.0.0.50" {
 			t.Errorf("expected IP 10.0.0.50, got %s", ip)
@@ -73,8 +73,8 @@ func TestHTTPProxy_RateLimitFlow(t *testing.T) {
 
 	ip := "203.0.113.1"
 	config := RateLimitConfig{
-		WindowSeconds:       1,
-		MaxRequests:         5,
+		WindowSeconds:        1,
+		MaxRequests:          5,
 		BlockDurationSeconds: 2,
 	}
 
@@ -148,10 +148,10 @@ func TestHTTPProxy_HeaderPriority(t *testing.T) {
 			expected: "203.0.113.1",
 		},
 		{
-			name: "RemoteAddr fallback",
-			headers: map[string]string{},
+			name:       "RemoteAddr fallback",
+			headers:    map[string]string{},
 			remoteAddr: "192.168.1.1:54321",
-			expected: "192.168.1.1",
+			expected:   "192.168.1.1",
 		},
 	}
 
@@ -176,8 +176,8 @@ func TestHTTPProxy_HeaderPriority(t *testing.T) {
 func TestHTTPProxy_ConcurrentRequests(t *testing.T) {
 	rl := NewRateLimiter()
 	config := RateLimitConfig{
-		WindowSeconds:       1,
-		MaxRequests:         100,
+		WindowSeconds:        1,
+		MaxRequests:          100,
 		BlockDurationSeconds: 60,
 	}
 

@@ -3,6 +3,7 @@ package stats
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -13,28 +14,28 @@ import (
 )
 
 type ResourceStats struct {
-	InboundBytes       int64
-	OutboundBytes      int64
-	Requests           int64
-	TotalResponseTime  int64
-	Errors             int64
-	BlockedRequests    int64
-	RateLimitBlocks    int64
-	FirewallBlocks     int64
-	L4Blocks           int64
+	InboundBytes      int64
+	OutboundBytes     int64
+	Requests          int64
+	TotalResponseTime int64
+	Errors            int64
+	BlockedRequests   int64
+	RateLimitBlocks   int64
+	FirewallBlocks    int64
+	L4Blocks          int64
 }
 
 type StatisticsCollector struct {
-	mu          sync.RWMutex
-	proxyStats  map[string]*ResourceStats
-	domainStats map[string]*ResourceStats
-	httpStats   *proxy.HTTPStats
-	httpsStats  *proxy.HTTPStats
+	mu            sync.RWMutex
+	proxyStats    map[string]*ResourceStats
+	domainStats   map[string]*ResourceStats
+	httpStats     *proxy.HTTPStats
+	httpsStats    *proxy.HTTPStats
 	firewallStats firewall.FirewallStats
-	client      *http.Client
-	coreURL     string
-	agentID     string
-	agentKey    string
+	client        *http.Client
+	coreURL       string
+	agentID       string
+	agentKey      string
 }
 
 var globalCollector *StatisticsCollector
@@ -80,23 +81,23 @@ func (sc *StatisticsCollector) UpdateFirewallStats() {
 }
 
 type StatisticsPayload struct {
-	AgentID        string `json:"agentId"`
-	ResourceType   string `json:"resourceType"`
-	ResourceID     string `json:"resourceId"`
-	InboundBytes   int64  `json:"inboundBytes"`
-	OutboundBytes  int64  `json:"outboundBytes"`
-	Requests       int64  `json:"requests"`
-	ResponseTimeMs int64  `json:"responseTimeMs"`
-	Errors         int64  `json:"errors"`
-	BlockedRequests int64 `json:"blockedRequests,omitempty"`
-	RateLimitBlocks int64 `json:"rateLimitBlocks,omitempty"`
-	FirewallBlocks  int64 `json:"firewallBlocks,omitempty"`
-	L4Blocks        int64 `json:"l4Blocks,omitempty"`
+	AgentID         string `json:"agentId"`
+	ResourceType    string `json:"resourceType"`
+	ResourceID      string `json:"resourceId"`
+	InboundBytes    int64  `json:"inboundBytes"`
+	OutboundBytes   int64  `json:"outboundBytes"`
+	Requests        int64  `json:"requests"`
+	ResponseTimeMs  int64  `json:"responseTimeMs"`
+	Errors          int64  `json:"errors"`
+	BlockedRequests int64  `json:"blockedRequests,omitempty"`
+	RateLimitBlocks int64  `json:"rateLimitBlocks,omitempty"`
+	FirewallBlocks  int64  `json:"firewallBlocks,omitempty"`
+	L4Blocks        int64  `json:"l4Blocks,omitempty"`
 }
 
 func (sc *StatisticsCollector) SendStatistics() {
 	sc.mu.Lock()
-	
+
 	if sc.coreURL == "" || sc.agentID == "" || sc.agentKey == "" {
 		sc.mu.Unlock()
 		return
@@ -149,7 +150,6 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 	sc.sendPayload(payload)
 }
 
-
 func (sc *StatisticsCollector) sendPayload(payload StatisticsPayload) {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
@@ -179,8 +179,11 @@ func (sc *StatisticsCollector) sendPayloadUnsafe(payload StatisticsPayload) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[Stats] Error response (status %d) for resource %s/%s", resp.StatusCode, payload.ResourceType, payload.ResourceID)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[Stats] Error response (status %d) for resource %s/%s: %s", resp.StatusCode, payload.ResourceType, payload.ResourceID, string(body))
 		return
 	}
+
+	log.Printf("[Stats] Successfully sent statistics for %s/%s", payload.ResourceType, payload.ResourceID)
 }

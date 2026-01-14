@@ -9,13 +9,13 @@ import (
 )
 
 type L4Protection struct {
-	mu              sync.RWMutex
+	mu               sync.RWMutex
 	connectionLimits map[string]*connectionTracker
-	maxConnsPerIP   int
-	rateLimitPerIP  int
-	rateWindow      time.Duration
-	suspiciousFlags map[string]int64
-	stopChan        chan struct{}
+	maxConnsPerIP    int
+	rateLimitPerIP   int
+	rateWindow       time.Duration
+	suspiciousFlags  map[string]int64
+	stopChan         chan struct{}
 }
 
 type connectionTracker struct {

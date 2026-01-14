@@ -10,7 +10,7 @@ func TestStatisticsCollector(t *testing.T) {
 	t.Run("singleton pattern", func(t *testing.T) {
 		collector1 := GetCollector()
 		collector2 := GetCollector()
-		
+
 		if collector1 != collector2 {
 			t.Error("GetCollector should return the same instance")
 		}
@@ -44,7 +44,7 @@ func TestStatisticsCollector(t *testing.T) {
 
 	t.Run("send statistics structure", func(t *testing.T) {
 		collector := GetCollector()
-		
+
 		// устанавливаем тестовый конфиг
 		collector.SetConfig("http://localhost:3000", "test-agent", "test-key")
 

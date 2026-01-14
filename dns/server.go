@@ -83,7 +83,7 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	// Try to find exact domain match first
 	domainConfig := s.configMgr.GetDomain(domain)
-	
+
 	// If not found, try to find parent domain (for subdomains like _acme-challenge.example.com)
 	if domainConfig == nil {
 		parentDomain := extractParentDomain(domain)
@@ -92,7 +92,7 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 			log.Printf("[DNS] Exact match not found for %s, trying parent domain: %s", domain, parentDomain)
 		}
 	}
-	
+
 	if domainConfig == nil {
 		log.Printf("[DNS] Domain not found: %s", domain)
 		atomic.AddUint64(&s.stats.NXDomain, 1)
@@ -243,7 +243,7 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 		// если запрашивается A/AAAA, пытаемся разрешить целевой домен CNAME
 		if qtype == dns.TypeA || qtype == dns.TypeAAAA {
 			targetDomainClean := cleanDomain(targetFQDN)
-			
+
 			// сначала проверяем есть ли A/AAAA записи для целевого домена в наших записях
 			foundInRecords := false
 			for _, record := range domainConfig.DNSRecords {
