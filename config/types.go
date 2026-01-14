@@ -18,6 +18,7 @@ type Domain struct {
 	HTTPProxy  HTTPProxy         `json:"httpProxy"`
 	SSL        SSL               `json:"ssl"`
 	LuaCode    string            `json:"luaCode"`
+	PageRules  []PageRule        `json:"pageRules"`
 }
 
 type DNSRecord struct {
@@ -82,4 +83,31 @@ type PollResponse struct {
 	Success bool     `json:"success"`
 	Domains []Domain `json:"domains"`
 	Proxies []Proxy  `json:"proxies"`
+}
+
+type PageRule struct {
+	Enabled    bool            `json:"enabled"`
+	Priority   int             `json:"priority"`
+	URLPattern string          `json:"urlPattern"`
+	Actions    PageRuleActions `json:"actions"`
+}
+
+type PageRuleActions struct {
+	SecurityLevel       string            `json:"securityLevel,omitempty"`
+	CacheLevel          string            `json:"cacheLevel,omitempty"`
+	BrowserCacheTTL     *int              `json:"browserCacheTtl,omitempty"`
+	EdgeCacheTTL        *int              `json:"edgeCacheTtl,omitempty"`
+	AlwaysUseHTTPS      *bool             `json:"alwaysUseHttps,omitempty"`
+	ForwardingURL       *ForwardingURL    `json:"forwardingUrl,omitempty"`
+	DisableSecurity     *bool             `json:"disableSecurity,omitempty"`
+	DisableRateLimiting *bool             `json:"disableRateLimiting,omitempty"`
+	CustomHeaders       map[string]string `json:"customHeaders,omitempty"`
+	IPGeolocationHeader *bool             `json:"ipGeolocationHeader,omitempty"`
+	OriginCacheControl  *bool             `json:"originCacheControl,omitempty"`
+	ResolveOverride     string            `json:"resolveOverride,omitempty"`
+}
+
+type ForwardingURL struct {
+	StatusCode int    `json:"statusCode"`
+	URL        string `json:"url"`
 }

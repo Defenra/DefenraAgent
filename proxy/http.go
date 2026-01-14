@@ -91,8 +91,18 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// проверка whitelist
-	if domainConfig.HTTPProxy.AntiDDoS != nil && domainConfig.HTTPProxy.AntiDDoS.Enabled {
+	// Применяем Page Rules
+	requestURL := r.Host + r.RequestURI
+	matchedRules := MatchPageRules(domainConfig.PageRules, requestURL)
+	handled, skipSecurity, skipRateLimit, customBackend := ApplyPageRules(w, r, matchedRules, domainConfig)
+
+	if handled {
+		// Запрос уже обработан (redirect, block, etc)
+		return
+	}
+
+	// проверка whitelist (если не отключено Page Rule)
+	if !skipRateLimit && domainConfig.HTTPProxy.AntiDDoS != nil && domainConfig.HTTPProxy.AntiDDoS.Enabled {
 		if len(domainConfig.HTTPProxy.AntiDDoS.IPWhitelist) > 0 {
 			whitelisted := false
 			for _, wlIP := range domainConfig.HTTPProxy.AntiDDoS.IPWhitelist {
@@ -166,7 +176,8 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if domainConfig.LuaCode != "" {
+	// WAF проверка (если не отключено Page Rule)
+	if !skipSecurity && domainConfig.LuaCode != "" {
 		blocked, response := s.wafEngine.Execute(domainConfig.LuaCode, r)
 
 		// Apply headers from WAF (even if not blocked, for security headers)
@@ -186,6 +197,12 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	target := s.findProxyTarget(domainConfig, host)
+
+	// Используем custom backend если указан в Page Rule
+	if customBackend != "" {
+		target = customBackend
+	}
+
 	if target == "" {
 		log.Printf("[HTTP] No backend found for: %s", host)
 		http.Error(w, "No backend available", http.StatusBadGateway)
