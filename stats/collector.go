@@ -116,7 +116,47 @@ func (sc *StatisticsCollector) SendStatistics() {
 	// отправляем статистику по доменам (HTTP/HTTPS трафик)
 	sc.sendDomainStatistics(httpStats, httpsStats, firewallStats)
 
+	// отправляем статистику по TCP/UDP прокси
+	sc.sendProxyStatistics()
+
 	log.Printf("[Stats] Statistics sent to Core")
+}
+
+func (sc *StatisticsCollector) sendProxyStatistics() {
+	proxyManager := proxy.GetGlobalProxyManager()
+	if proxyManager == nil {
+		return
+	}
+
+	proxyStats := proxyManager.GetProxyStats()
+
+	for proxyPort, stats := range proxyStats {
+		totalConns, _, bytesSent, bytesReceived := stats.GetStats()
+
+		if totalConns == 0 {
+			continue
+		}
+
+		payload := StatisticsPayload{
+			AgentID:         sc.agentID,
+			ResourceType:    "proxy",
+			ResourceID:      proxyPort,
+			InboundBytes:    int64(bytesReceived),
+			OutboundBytes:   int64(bytesSent),
+			Requests:        int64(totalConns),
+			ResponseTimeMs:  0,
+			Errors:          0,
+			BlockedRequests: 0,
+			RateLimitBlocks: 0,
+			FirewallBlocks:  0,
+			L4Blocks:        0,
+		}
+
+		sc.sendPayload(payload)
+
+		log.Printf("[Stats] Sent proxy stats for port %s: %d connections, %d bytes sent, %d bytes received",
+			proxyPort, totalConns, bytesSent, bytesReceived)
+	}
 }
 
 func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.HTTPStats, firewallStats firewall.FirewallStats) {
