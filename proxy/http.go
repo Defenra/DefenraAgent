@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -234,7 +235,24 @@ func (s *HTTPProxyServer) findProxyTarget(domainConfig *config.Domain, host stri
 }
 
 func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, target string) {
-	targetURL := fmt.Sprintf("http://%s%s", target, r.RequestURI)
+	host := r.Host
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	domainConfig := s.configMgr.GetDomain(host)
+	encryptionMode := "flexible" // default for HTTP proxy
+	if domainConfig != nil && domainConfig.SSL.EncryptionMode != "" {
+		encryptionMode = domainConfig.SSL.EncryptionMode
+	}
+
+	// Determine target URL scheme based on encryption mode
+	scheme := "http"
+	if encryptionMode == "full" || encryptionMode == "full_strict" {
+		scheme = "https"
+	}
+
+	targetURL := fmt.Sprintf("%s://%s%s", scheme, target, r.RequestURI)
 
 	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
@@ -254,12 +272,8 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	proxyReq.Header.Set("X-Forwarded-Proto", "http")
 	proxyReq.Header.Set("X-Real-IP", getClientIP(r))
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	// Create HTTP client with TLS configuration based on encryption mode
+	client := createHTTPClient(encryptionMode)
 
 	resp, err := client.Do(proxyReq)
 	if err != nil {
@@ -343,4 +357,34 @@ func GetHTTPStats() HTTPStats {
 		return globalHTTPServer.GetStats()
 	}
 	return HTTPStats{}
+}
+
+// createHTTPClient creates an HTTP client with TLS configuration based on encryption mode
+func createHTTPClient(encryptionMode string) *http.Client {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Configure TLS based on encryption mode
+	if encryptionMode == "full" {
+		// Full mode: accept any certificate (self-signed, expired, etc.)
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	} else if encryptionMode == "full_strict" {
+		// Full (Strict) mode: validate certificates properly
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: false,
+			},
+		}
+	}
+	// For "flexible" and "off" modes, use default HTTP transport (no TLS)
+
+	return client
 }
