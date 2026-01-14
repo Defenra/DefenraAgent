@@ -244,7 +244,24 @@ func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host str
 }
 
 func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, target string) {
-	targetURL := fmt.Sprintf("http://%s%s", target, r.RequestURI)
+	host := r.Host
+	if idx := strings.Index(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	domainConfig := s.configMgr.GetDomain(host)
+	encryptionMode := "full_strict" // default for HTTPS proxy
+	if domainConfig != nil && domainConfig.SSL.EncryptionMode != "" {
+		encryptionMode = domainConfig.SSL.EncryptionMode
+	}
+
+	// Determine target URL scheme based on encryption mode
+	scheme := "http"
+	if encryptionMode == "full" || encryptionMode == "full_strict" {
+		scheme = "https"
+	}
+
+	targetURL := fmt.Sprintf("%s://%s%s", scheme, target, r.RequestURI)
 
 	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
@@ -264,12 +281,8 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	proxyReq.Header.Set("X-Forwarded-Proto", "https")
 	proxyReq.Header.Set("X-Real-IP", getClientIP(r))
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	// Create HTTP client with TLS configuration based on encryption mode
+	client := createHTTPClient(encryptionMode)
 
 	resp, err := client.Do(proxyReq)
 	if err != nil {
