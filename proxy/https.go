@@ -297,6 +297,7 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	// Create HTTP client with TLS configuration based on encryption mode
 	client := createHTTPClient(encryptionMode)
 
+	startTime := time.Now()
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		log.Printf("[HTTPS] Error proxying request: %v", err)
@@ -313,11 +314,32 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("[HTTPS] Error copying response body: %v", err)
+
+	// Track traffic
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[HTTPS] Error reading response body: %v", err)
+		return
 	}
 
-	log.Printf("[HTTPS] Proxied: %s → %s (status: %d)", r.Host+r.RequestURI, target, resp.StatusCode)
+	if _, err := w.Write(bodyBytes); err != nil {
+		log.Printf("[HTTPS] Error writing response: %v", err)
+		return
+	}
+
+	// Calculate traffic
+	clientIP := getClientIP(r)
+	requestSize := uint64(len(r.RequestURI) + len(r.Method) + 100) // approximate request size
+	responseSize := uint64(len(bodyBytes))
+
+	// Track client with traffic and geolocation
+	tracker := GetGlobalHTTPClientTracker()
+	userAgent := r.Header.Get("User-Agent")
+	tracker.TrackRequest(clientIP, userAgent, host, requestSize, responseSize)
+
+	duration := time.Since(startTime)
+	log.Printf("[HTTPS] Proxied: %s → %s (status: %d, duration: %v, sent: %d, received: %d)",
+		r.Host+r.RequestURI, target, resp.StatusCode, duration, requestSize, responseSize)
 }
 
 func (s *HTTPSProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
