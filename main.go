@@ -8,6 +8,7 @@ import (
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/dns"
+	"github.com/defenra/agent/firewall"
 	"github.com/defenra/agent/health"
 	"github.com/defenra/agent/proxy"
 	"github.com/defenra/agent/stats"
@@ -67,6 +68,10 @@ func main() {
 
 	log.Println("Starting TCP/UDP Proxy Manager...")
 	go proxy.StartProxyManager(configMgr)
+
+	// Initialize firewall manager for health checks (avoid circular imports)
+	firewallMgr := firewall.GetIPTablesManager()
+	health.SetFirewallManager(firewallMgr)
 
 	log.Println("Starting Health Check on :8080...")
 	go health.StartHealthCheck(configMgr)

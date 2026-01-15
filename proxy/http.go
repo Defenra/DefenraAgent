@@ -13,7 +13,6 @@ import (
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
-	"github.com/defenra/agent/health"
 	"github.com/defenra/agent/waf"
 )
 
@@ -43,7 +42,7 @@ func StartHTTPProxy(configMgr *config.ConfigManager) {
 	rateLimiter.StartCleanup()
 
 	firewallMgr := firewall.GetIPTablesManager()
-	health.SetFirewallManager(firewallMgr)
+	// Note: SetFirewallManager will be called from main.go to avoid circular imports
 
 	server := &HTTPProxyServer{
 		configMgr:   configMgr,

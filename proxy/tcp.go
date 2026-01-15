@@ -13,7 +13,6 @@ import (
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
-	"github.com/defenra/agent/health"
 )
 
 type ProxyManager struct {
@@ -99,14 +98,14 @@ func (ct *ClientTracker) RemoveClient(ip string) {
 	delete(ct.clients, ip)
 }
 
-func (ct *ClientTracker) GetClients() []*health.ClientConnection {
+func (ct *ClientTracker) GetClients() []*ClientConnection {
 	ct.mu.RLock()
 	defer ct.mu.RUnlock()
 
-	clients := make([]*health.ClientConnection, 0, len(ct.clients))
+	clients := make([]*ClientConnection, 0, len(ct.clients))
 	for _, client := range ct.clients {
 		// копируем данные для безопасности
-		clientCopy := &health.ClientConnection{
+		clientCopy := &ClientConnection{
 			IP:            client.IP,
 			ConnectedAt:   client.ConnectedAt,
 			LastActivity:  client.LastActivity,
@@ -133,7 +132,7 @@ func GetGlobalClientTracker() *ClientTracker {
 func StartProxyManager(configMgr *config.ConfigManager) {
 	l4Protection := firewall.NewL4Protection(100, 1000, 60*time.Second)
 	firewallMgr := firewall.GetIPTablesManager()
-	health.SetFirewallManager(firewallMgr)
+	// Note: SetFirewallManager will be called from main.go to avoid circular imports
 
 	manager := &ProxyManager{
 		configMgr:     configMgr,

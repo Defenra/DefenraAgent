@@ -10,11 +10,13 @@ import (
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
+	"github.com/defenra/agent/stats"
 )
 
 type HealthServer struct {
-	configMgr *config.ConfigManager
-	startTime time.Time
+	configMgr       *config.ConfigManager
+	startTime       time.Time
+	systemCollector *stats.SystemMetricsCollector
 }
 
 var globalFirewallMgr *firewall.IPTablesManager
@@ -34,9 +36,10 @@ type HealthResponse struct {
 }
 
 type StatsResponse struct {
-	Config   ConfigStats   `json:"config"`
-	Runtime  RuntimeStats  `json:"runtime"`
-	Firewall FirewallStats `json:"firewall"`
+	Config        ConfigStats          `json:"config"`
+	Runtime       RuntimeStats         `json:"runtime"`
+	Firewall      FirewallStats        `json:"firewall"`
+	SystemMetrics *stats.SystemMetrics `json:"systemMetrics,omitempty"`
 }
 
 type ConfigStats struct {
@@ -66,8 +69,9 @@ type FirewallStats struct {
 
 func StartHealthCheck(configMgr *config.ConfigManager) {
 	server := &HealthServer{
-		configMgr: configMgr,
-		startTime: time.Now(),
+		configMgr:       configMgr,
+		startTime:       time.Now(),
+		systemCollector: stats.NewSystemMetricsCollector(),
 	}
 
 	http.HandleFunc("/health", server.handleHealth)
@@ -101,20 +105,30 @@ func (h *HealthServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats := h.configMgr.GetStats()
+	configStats := h.configMgr.GetStats()
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
 	firewallStats := firewall.GetStats()
 
+	// Collect system metrics
+	var systemMetrics *stats.SystemMetrics
+	if h.systemCollector != nil {
+		if metrics, err := h.systemCollector.CollectMetrics(); err != nil {
+			log.Printf("[Health] Failed to collect system metrics: %v", err)
+		} else {
+			systemMetrics = metrics
+		}
+	}
+
 	response := StatsResponse{
 		Config: ConfigStats{
-			TotalPolls:    stats.TotalPolls,
-			FailedPolls:   stats.FailedPolls,
-			LastPollTime:  stats.LastPollTime,
-			DomainsLoaded: stats.DomainsLoaded,
-			ProxiesActive: stats.ProxiesActive,
+			TotalPolls:    configStats.TotalPolls,
+			FailedPolls:   configStats.FailedPolls,
+			LastPollTime:  configStats.LastPollTime,
+			DomainsLoaded: configStats.DomainsLoaded,
+			ProxiesActive: configStats.ProxiesActive,
 		},
 		Runtime: RuntimeStats{
 			Uptime:       formatDuration(time.Since(h.startTime)),
@@ -131,6 +145,7 @@ func (h *HealthServer) handleStats(w http.ResponseWriter, r *http.Request) {
 			RateLimitBlocks:       firewallStats.RateLimitBlocks,
 			ConnectionLimitBlocks: firewallStats.ConnectionLimitBlocks,
 		},
+		SystemMetrics: systemMetrics,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
