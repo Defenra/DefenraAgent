@@ -293,16 +293,22 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 		return
 	}
 
+	// Copy all headers from client request
 	for key, values := range r.Header {
 		for _, value := range values {
 			proxyReq.Header.Add(key, value)
 		}
 	}
 
+	// Set/override proxy headers
 	clientIP := getClientIP(r)
 	proxyReq.Header.Set("X-Forwarded-For", clientIP)
 	proxyReq.Header.Set("X-Forwarded-Proto", "http")
 	proxyReq.Header.Set("X-Real-IP", clientIP)
+
+	// Preserve original Host header from client (important for virtual hosting on origin)
+	// Go's http.NewRequest sets Host from URL, but we want the original domain
+	proxyReq.Host = r.Host
 
 	// Create HTTP client with TLS configuration based on encryption mode
 	client := createHTTPClient(encryptionMode)
