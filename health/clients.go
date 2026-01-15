@@ -1,54 +1,20 @@
 package health
 
 import (
+	"fmt"
 	"time"
+
+	"github.com/defenra/agent/proxy"
 )
-
-// ClientConnection represents a client connection (used by TCP proxy)
-type ClientConnection struct {
-	IP            string
-	ConnectedAt   time.Time
-	LastActivity  time.Time
-	BytesSent     uint64
-	BytesReceived uint64
-	ProxyID       string
-	ProxyPort     int
-}
-
-// HTTPClientProvider is an interface for getting HTTP/HTTPS clients
-type HTTPClientProvider interface {
-	GetAllClients() []HTTPClientInfo
-	GetClientsByDomain(domain string) []HTTPClientInfo
-}
-
-// HTTPClientInfo represents an HTTP/HTTPS client
-type HTTPClientInfo struct {
-	IP            string
-	ConnectedAt   time.Time
-	LastActivity  time.Time
-	BytesSent     uint64
-	BytesReceived uint64
-	Country       string
-	City          string
-	CountryCode   string
-	UserAgent     string
-	Domain        string
-}
-
-var httpClientProvider HTTPClientProvider
-
-// SetHTTPClientProvider sets the HTTP client provider
-func SetHTTPClientProvider(provider HTTPClientProvider) {
-	httpClientProvider = provider
-}
 
 // GetAllHTTPClients returns all HTTP/HTTPS clients
 func GetAllHTTPClients() []ClientInfo {
-	if httpClientProvider == nil {
+	provider := proxy.GetHTTPClientProvider()
+	if provider == nil {
 		return []ClientInfo{}
 	}
 
-	httpClients := httpClientProvider.GetAllClients()
+	httpClients := provider.GetAllClients()
 	clients := make([]ClientInfo, 0, len(httpClients))
 
 	for _, hc := range httpClients {
@@ -71,11 +37,12 @@ func GetAllHTTPClients() []ClientInfo {
 
 // GetHTTPClientsByDomain returns HTTP/HTTPS clients for a specific domain
 func GetHTTPClientsByDomain(domain string) []ClientInfo {
-	if httpClientProvider == nil {
+	provider := proxy.GetHTTPClientProvider()
+	if provider == nil {
 		return []ClientInfo{}
 	}
 
-	httpClients := httpClientProvider.GetClientsByDomain(domain)
+	httpClients := provider.GetClientsByDomain(domain)
 	clients := make([]ClientInfo, 0, len(httpClients))
 
 	for _, hc := range httpClients {
@@ -98,7 +65,33 @@ func GetHTTPClientsByDomain(domain string) []ClientInfo {
 
 // getActiveClients returns TCP/UDP proxy clients
 func getActiveClients(portFilter string) []ClientInfo {
-	// This will be implemented by proxy package
-	// For now, return empty list
-	return []ClientInfo{}
+	tracker := proxy.GetGlobalClientTracker()
+	if tracker == nil {
+		return []ClientInfo{}
+	}
+
+	clients := tracker.GetClients()
+	result := make([]ClientInfo, 0, len(clients))
+
+	for _, client := range clients {
+		// Filter by port if specified
+		if portFilter != "" && fmt.Sprintf("%d", client.ProxyPort) != portFilter {
+			continue
+		}
+
+		duration := time.Since(client.ConnectedAt)
+		result = append(result, ClientInfo{
+			IP:            client.IP,
+			ConnectedAt:   client.ConnectedAt.Format(time.RFC3339),
+			LastActivity:  client.LastActivity.Format(time.RFC3339),
+			Duration:      formatDuration(duration),
+			BytesSent:     client.BytesSent,
+			BytesReceived: client.BytesReceived,
+			TotalBytes:    client.BytesSent + client.BytesReceived,
+			ProxyID:       client.ProxyID,
+			ProxyPort:     client.ProxyPort,
+		})
+	}
+
+	return result
 }

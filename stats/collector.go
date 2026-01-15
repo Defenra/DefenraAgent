@@ -26,17 +26,18 @@ type ResourceStats struct {
 }
 
 type StatisticsCollector struct {
-	mu             sync.RWMutex
-	proxyStats     map[string]*ResourceStats
-	domainStats    map[string]*ResourceStats
-	httpStats      *proxy.HTTPStats
-	httpsStats     *proxy.HTTPStats
-	firewallStats  firewall.FirewallStats
-	client         *http.Client
-	coreURL        string
-	agentID        string
-	agentKey       string
-	clientReporter *ClientReporter
+	mu              sync.RWMutex
+	proxyStats      map[string]*ResourceStats
+	domainStats     map[string]*ResourceStats
+	httpStats       *proxy.HTTPStats
+	httpsStats      *proxy.HTTPStats
+	firewallStats   firewall.FirewallStats
+	client          *http.Client
+	coreURL         string
+	agentID         string
+	agentKey        string
+	clientReporter  *ClientReporter
+	systemCollector *SystemMetricsCollector
 }
 
 var globalCollector *StatisticsCollector
@@ -45,8 +46,9 @@ var globalCollectorOnce sync.Once
 func GetCollector() *StatisticsCollector {
 	globalCollectorOnce.Do(func() {
 		globalCollector = &StatisticsCollector{
-			proxyStats:  make(map[string]*ResourceStats),
-			domainStats: make(map[string]*ResourceStats),
+			proxyStats:      make(map[string]*ResourceStats),
+			domainStats:     make(map[string]*ResourceStats),
+			systemCollector: NewSystemMetricsCollector(),
 			client: &http.Client{
 				Timeout: 30 * time.Second,
 			},
@@ -95,6 +97,8 @@ type StatisticsPayload struct {
 	RateLimitBlocks int64  `json:"rateLimitBlocks,omitempty"`
 	FirewallBlocks  int64  `json:"firewallBlocks,omitempty"`
 	L4Blocks        int64  `json:"l4Blocks,omitempty"`
+	// System metrics
+	SystemMetrics *SystemMetrics `json:"systemMetrics,omitempty"`
 }
 
 func (sc *StatisticsCollector) SendStatistics() {
@@ -115,8 +119,18 @@ func (sc *StatisticsCollector) SendStatistics() {
 	httpsStats := proxy.GetHTTPSStats()
 	firewallStats := firewall.GetStats()
 
-	// отправляем статистику по доменам (HTTP/HTTPS трафик)
-	sc.sendDomainStatistics(httpStats, httpsStats, firewallStats)
+	// собираем системные метрики
+	var systemMetrics *SystemMetrics
+	if sc.systemCollector != nil {
+		if metrics, err := sc.systemCollector.CollectMetrics(); err != nil {
+			log.Printf("[Stats] Failed to collect system metrics: %v", err)
+		} else {
+			systemMetrics = metrics
+		}
+	}
+
+	// отправляем статистику по доменам (HTTP/HTTPS трафик) с системными метриками
+	sc.sendDomainStatistics(httpStats, httpsStats, firewallStats, systemMetrics)
 
 	// отправляем статистику по TCP/UDP прокси
 	sc.sendProxyStatistics()
@@ -161,7 +175,7 @@ func (sc *StatisticsCollector) sendProxyStatistics() {
 	}
 }
 
-func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.HTTPStats, firewallStats firewall.FirewallStats) {
+func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.HTTPStats, firewallStats firewall.FirewallStats, systemMetrics *SystemMetrics) {
 	// объединяем HTTP и HTTPS статистику
 	totalRequests := httpStats.TotalRequests + httpsStats.TotalRequests
 	totalBlocked := httpStats.BlockedRequests + httpsStats.BlockedRequests
@@ -187,6 +201,7 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 		RateLimitBlocks: int64(totalRateLimit),
 		FirewallBlocks:  int64(totalFirewall),
 		L4Blocks:        int64(firewallStats.L4Blocks),
+		SystemMetrics:   systemMetrics,
 	}
 
 	sc.sendPayload(payload)

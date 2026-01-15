@@ -1,10 +1,6 @@
 package proxy
 
-import (
-	"github.com/defenra/agent/health"
-)
-
-// HTTPClientTrackerAdapter adapts HTTPClientTracker to health.HTTPClientProvider interface
+// HTTPClientTrackerAdapter adapts HTTPClientTracker to HTTPClientProvider interface
 type HTTPClientTrackerAdapter struct {
 	tracker *HTTPClientTracker
 }
@@ -16,13 +12,13 @@ func NewHTTPClientTrackerAdapter(tracker *HTTPClientTracker) *HTTPClientTrackerA
 	}
 }
 
-// GetAllClients implements health.HTTPClientProvider
-func (a *HTTPClientTrackerAdapter) GetAllClients() []health.HTTPClientInfo {
+// GetAllClients implements HTTPClientProvider
+func (a *HTTPClientTrackerAdapter) GetAllClients() []HTTPClientInfo {
 	clients := a.tracker.GetClients()
-	result := make([]health.HTTPClientInfo, 0, len(clients))
+	result := make([]HTTPClientInfo, 0, len(clients))
 
 	for _, c := range clients {
-		result = append(result, health.HTTPClientInfo{
+		result = append(result, HTTPClientInfo{
 			IP:            c.IP,
 			ConnectedAt:   c.ConnectedAt,
 			LastActivity:  c.LastActivity,
@@ -39,13 +35,13 @@ func (a *HTTPClientTrackerAdapter) GetAllClients() []health.HTTPClientInfo {
 	return result
 }
 
-// GetClientsByDomain implements health.HTTPClientProvider
-func (a *HTTPClientTrackerAdapter) GetClientsByDomain(domain string) []health.HTTPClientInfo {
+// GetClientsByDomain implements HTTPClientProvider
+func (a *HTTPClientTrackerAdapter) GetClientsByDomain(domain string) []HTTPClientInfo {
 	clients := a.tracker.GetClientsByDomain(domain)
-	result := make([]health.HTTPClientInfo, 0, len(clients))
+	result := make([]HTTPClientInfo, 0, len(clients))
 
 	for _, c := range clients {
-		result = append(result, health.HTTPClientInfo{
+		result = append(result, HTTPClientInfo{
 			IP:            c.IP,
 			ConnectedAt:   c.ConnectedAt,
 			LastActivity:  c.LastActivity,
@@ -62,9 +58,21 @@ func (a *HTTPClientTrackerAdapter) GetClientsByDomain(domain string) []health.HT
 	return result
 }
 
-// InitHTTPClientProvider initializes the HTTP client provider for health checks
+var httpClientProvider HTTPClientProvider
+
+// SetHTTPClientProvider sets the HTTP client provider
+func SetHTTPClientProvider(provider HTTPClientProvider) {
+	httpClientProvider = provider
+}
+
+// GetHTTPClientProvider returns the current HTTP client provider
+func GetHTTPClientProvider() HTTPClientProvider {
+	return httpClientProvider
+}
+
+// InitHTTPClientProvider initializes the HTTP client provider
 func InitHTTPClientProvider() {
 	tracker := GetGlobalHTTPClientTracker()
 	adapter := NewHTTPClientTrackerAdapter(tracker)
-	health.SetHTTPClientProvider(adapter)
+	SetHTTPClientProvider(adapter)
 }
