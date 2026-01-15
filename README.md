@@ -130,6 +130,30 @@ export CORE_URL=https://core.defenra.com
 ./defenra-agent
 ```
 
+### Update
+
+DefenraAgent includes built-in self-update functionality:
+
+```bash
+# Check for updates
+defenra-agent check-update
+
+# Update to latest version
+sudo defenra-agent update
+
+# Show current version
+defenra-agent version
+```
+
+The updater automatically:
+- Checks GitHub releases for new versions
+- Downloads the correct binary for your platform
+- Verifies SHA256 checksums
+- Backs up the current binary
+- Installs the new version
+
+**See [docs/UPDATE.md](docs/UPDATE.md) for detailed documentation.**
+
 ## Docker
 
 **Pull from Docker Hub:**
