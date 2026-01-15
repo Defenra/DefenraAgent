@@ -304,15 +304,22 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// Copy all headers from client request
 	for key, values := range r.Header {
 		for _, value := range values {
 			proxyReq.Header.Add(key, value)
 		}
 	}
 
-	proxyReq.Header.Set("X-Forwarded-For", getClientIP(r))
+	// Set/override proxy headers
+	clientIP := getClientIP(r)
+	proxyReq.Header.Set("X-Forwarded-For", clientIP)
 	proxyReq.Header.Set("X-Forwarded-Proto", "https")
-	proxyReq.Header.Set("X-Real-IP", getClientIP(r))
+	proxyReq.Header.Set("X-Real-IP", clientIP)
+
+	// Preserve original Host header from client (important for virtual hosting on origin)
+	// Go's http.NewRequest sets Host from URL, but we want the original domain
+	proxyReq.Host = r.Host
 
 	// Create HTTP client with TLS configuration based on encryption mode
 	client := createHTTPClient(encryptionMode)
@@ -348,7 +355,6 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Calculate traffic
-	clientIP := getClientIP(r)
 	requestSize := uint64(len(r.RequestURI) + len(r.Method) + 100) // approximate request size
 	responseSize := uint64(len(bodyBytes))
 
