@@ -1,0 +1,98 @@
+{
+  "domains": [
+    {
+      "domain": "example.com",
+      "dnsRecords": [
+        {
+          "name": "@",
+          "type": "A",
+          "value": "192.168.1.100",
+          "ttl": 300,
+          "httpProxyEnabled": true
+        }
+      ],
+      "geoDnsMap": {},
+      "httpProxy": {
+        "type": "both",
+        "enabled": true,
+        "routingMode": "anycast",
+        "agentPool": [
+          {
+            "id": "agent-eu-west",
+            "endpoint": "https://agent-eu.example.com",
+            "region": "eu-west",
+            "priority": 0
+          },
+          {
+            "id": "agent-us-east",
+            "endpoint": "https://agent-us.example.com",
+            "region": "us-east",
+            "priority": 0
+          },
+          {
+            "id": "agent-asia",
+            "endpoint": "https://agent-asia.example.com",
+            "region": "asia",
+            "priority": 1
+          }
+        ],
+        "maxHops": 3,
+        "antiDDoS": {
+          "enabled": true,
+          "rateLimit": {
+            "windowSeconds": 60,
+            "maxRequests": 100
+          },
+          "blockDurationSeconds": 300
+        }
+      },
+      "ssl": {
+        "enabled": true,
+        "encryptionMode": "full_strict",
+        "certificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+        "privateKey": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+        "autoRenew": false
+      },
+      "luaCode": "",
+      "pageRules": []
+    },
+    {
+      "domain": "direct.example.com",
+      "dnsRecords": [
+        {
+          "name": "@",
+          "type": "A",
+          "value": "192.168.1.200",
+          "ttl": 300,
+          "httpProxyEnabled": true
+        }
+      ],
+      "geoDnsMap": {},
+      "httpProxy": {
+        "type": "both",
+        "enabled": true,
+        "routingMode": "direct",
+        "agentPool": [],
+        "maxHops": 0,
+        "antiDDoS": {
+          "enabled": true,
+          "rateLimit": {
+            "windowSeconds": 60,
+            "maxRequests": 100
+          },
+          "blockDurationSeconds": 300
+        }
+      },
+      "ssl": {
+        "enabled": false,
+        "encryptionMode": "off",
+        "certificate": "",
+        "privateKey": "",
+        "autoRenew": false
+      },
+      "luaCode": "",
+      "pageRules": []
+    }
+  ],
+  "proxies": []
+}

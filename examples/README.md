@@ -1,179 +1,190 @@
-# Defenra Agent Examples
+# DefenraAgent Configuration Examples
 
-This directory contains example configurations and scripts for Defenra Agent.
+This directory contains example configurations for various DefenraAgent features.
 
-## WAF Examples
+## Anycast Routing (BETA)
 
-The `waf-examples.lua` file contains 20 different Lua WAF examples:
+**File:** `anycast-config-example.json`
 
-1. **Block Specific IP** - Block individual IP addresses
-2. **Block IP Range** - Block entire IP ranges
-3. **Rate Limiting** - Limit requests per IP
-4. **Block Bad User Agents** - Block bots and scanners
-5. **SQL Injection Protection** - Block SQL injection attempts
-6. **XSS Protection** - Block cross-site scripting attempts
-7. **API Key Authentication** - Require API keys
-8. **Admin Panel Protection** - Restrict admin access
-9. **Geographic Restrictions** - Block by country
-10. **Time-Based Access** - Maintenance windows
-11. **Path Traversal Protection** - Prevent directory attacks
-12. **File Extension Blacklist** - Block dangerous files
-13. **Security Headers** - Add security headers
-14. **Request Size Limits** - Prevent large uploads
-15. **Advanced Rate Limiting** - Rate limiting with burst
-16. **Whitelist Mode** - Allow only specific IPs
-17. **Custom Error Responses** - Custom error pages
-18. **Suspicious Activity Logging** - Log attacks
-19. **Challenge-Response** - CAPTCHA simulation
-20. **Combined Protection** - Production-ready example
+### Overview
 
-## Usage
+Anycast routing allows HTTP/HTTPS traffic to be proxied through multiple DefenraAgent instances before reaching the origin server. This creates a multi-layer defense mesh and enables geographic optimization.
 
-To use a WAF example in Defenra Core:
+### Configuration
 
-1. Copy the desired Lua code from `waf-examples.lua`
-2. Go to Defenra Core dashboard
-3. Navigate to your domain settings
-4. Paste the Lua code in the WAF section
-5. Save and wait for agent to poll the config
+#### Routing Modes
 
-## Testing WAF Rules
+- **`direct`** (default): Traffic goes directly from agent to origin server
+- **`anycast`** (BETA): Traffic can be routed through other agents before reaching origin
 
-### Test Rate Limiting
+#### HTTPProxy Configuration
 
-```bash
-# Send 150 requests
-for i in {1..150}; do
-  curl http://example.com
-done
-# After 100 requests, you should see: 429 Too Many Requests
+```json
+{
+  "httpProxy": {
+    "type": "both",
+    "enabled": true,
+    "routingMode": "anycast",
+    "agentPool": [
+      {
+        "id": "agent-eu-west",
+        "endpoint": "https://agent-eu.example.com",
+        "region": "eu-west",
+        "priority": 0
+      }
+    ],
+    "maxHops": 3
+  }
+}
 ```
 
-### Test SQL Injection Block
+#### Fields
 
-```bash
-curl "http://example.com/?id=1' OR '1'='1"
-# Should return: 403 Forbidden
+- **`routingMode`**: `"direct"` or `"anycast"`
+- **`agentPool`**: Array of agent endpoints for anycast routing
+  - **`id`**: Unique identifier for the agent
+  - **`endpoint`**: Full URL to the agent (http:// or https://)
+  - **`region`**: Optional geographic region label
+  - **`priority`**: Optional routing priority (lower = higher priority, default: 0)
+- **`maxHops`**: Maximum number of agent hops before routing to origin (default: 3)
+
+### How It Works
+
+1. Client sends request to Agent A (edge)
+2. Agent A checks `routingMode`:
+   - If `"direct"`: proxy directly to origin
+   - If `"anycast"`: select next agent from `agentPool`
+3. Agent A adds `X-Defenra-Hop` header with its ID
+4. Agent A proxies request to selected Agent B
+5. Agent B repeats the process
+6. When hop count reaches `maxHops`, route to origin
+7. Response flows back through the agent chain
+
+### Agent Selection
+
+For BETA, agents are selected using a simple algorithm:
+
+1. Filter agents by priority (lower priority value = higher priority)
+2. Randomly select from highest priority agents
+3. Future versions will support health-based and load-based selection
+
+### Hop Tracking
+
+Each agent adds its ID to the `X-Defenra-Hop` header:
+
+```
+X-Defenra-Hop: agent-a,agent-b,agent-c
 ```
 
-### Test XSS Block
+This allows:
+- Tracking the full routing path
+- Preventing routing loops
+- Debugging routing decisions
 
-```bash
-curl "http://example.com/?name=<script>alert(1)</script>"
-# Should return: 403 Forbidden
+### Use Cases
+
+1. **Multi-layer DDoS protection**: Each agent applies WAF, rate limiting, and firewall rules
+2. **Geographic optimization**: Route through agents closer to origin
+3. **Load distribution**: Spread traffic across multiple agents
+4. **Defense in depth**: Multiple filtering layers before reaching origin
+
+### Limitations (BETA)
+
+- Manual agent pool configuration (no automatic discovery)
+- Simple random selection algorithm
+- No agent health monitoring
+- No agent-to-agent authentication (relies on network trust)
+- Performance not optimized (focus on correctness)
+
+### Example Scenarios
+
+#### Scenario 1: Direct Routing (Default)
+
+```json
+{
+  "routingMode": "direct",
+  "agentPool": []
+}
 ```
 
-### Test IP Block
+Client → Agent A → Origin
 
-```bash
-# In Core, add your IP to blocked list
-curl http://example.com
-# Should return: 403 Forbidden
+#### Scenario 2: Single Intermediate Agent
+
+```json
+{
+  "routingMode": "anycast",
+  "agentPool": [
+    {"id": "agent-b", "endpoint": "https://agent-b.example.com"}
+  ],
+  "maxHops": 3
+}
 ```
 
-### Test Security Headers
+Client → Agent A → Agent B → Origin
 
-```bash
-curl -I http://example.com
-# Should see headers:
-# X-Frame-Options: DENY
-# X-Content-Type-Options: nosniff
+#### Scenario 3: Multi-hop with Priority
+
+```json
+{
+  "routingMode": "anycast",
+  "agentPool": [
+    {"id": "agent-eu", "endpoint": "https://agent-eu.example.com", "priority": 0},
+    {"id": "agent-us", "endpoint": "https://agent-us.example.com", "priority": 0},
+    {"id": "agent-backup", "endpoint": "https://agent-backup.example.com", "priority": 1}
+  ],
+  "maxHops": 2
+}
 ```
 
-## Custom WAF Rules
+- Agents with priority 0 (agent-eu, agent-us) are selected first
+- agent-backup is only used if no priority 0 agents available
+- Maximum 2 hops before routing to origin
 
-You can create your own custom rules. The Lua environment provides:
+### Monitoring
 
-### Available Variables
+Check agent logs for routing decisions:
 
-- `ngx.var.remote_addr` - Client IP address
-- `ngx.var.uri` - Request URI
-- `ngx.var.host` - Host header
-- `request.method` - HTTP method (GET, POST, etc.)
-- `request.uri` - Request URI
-- `request.host` - Host name
-- `request.headers` - Request headers table
-
-### Available Functions
-
-- `ngx.exit(status_code)` - Block request with status code
-- `ngx.shared.cache:get(key)` - Get value from shared cache
-- `ngx.shared.cache:set(key, value, ttl)` - Set value in cache
-- `ngx.shared.cache:incr(key, value, init, ttl)` - Increment counter
-- `ngx.header[name] = value` - Set response header
-
-### Example: Custom Rate Limiter
-
-```lua
-local ip = ngx.var.remote_addr
-local key = "custom_limit:" .. ip
-local count = ngx.shared.cache:get(key) or 0
-
--- Allow 50 requests per 5 minutes
-if count > 50 then
-  return ngx.exit(429)
-end
-
-ngx.shared.cache:incr(key, 1, 0, 300)  -- TTL: 300 seconds (5 min)
+```
+[HTTP] Routing decision: mode=anycast, target=https://agent-b.example.com, isAgent=true, hopCount=0, reason=selected agent agent-b from pool
+[HTTP] Added hop header: agent-a-1234 (total hops: 1)
 ```
 
-### Example: Block by Referer
+### Troubleshooting
 
-```lua
-local referer = request.headers["Referer"] or ""
+**Problem:** Traffic not routing through agents
 
-if string.find(referer, "badsite.com") then
-  return ngx.exit(403)
-end
-```
+- Check `routingMode` is set to `"anycast"`
+- Verify `agentPool` is not empty
+- Check agent endpoints are reachable
 
-### Example: Allow Only Specific Methods
+**Problem:** Routing loops
 
-```lua
-local allowed_methods = {GET = true, POST = true, HEAD = true}
+- Verify `maxHops` is set (default: 3)
+- Check `X-Defenra-Hop` header in logs
+- Ensure agents don't reference themselves in pool
 
-if not allowed_methods[request.method] then
-  return ngx.exit(405)
-end
-```
+**Problem:** Agent unreachable
 
-## Performance Tips
+- Agent automatically falls back to origin
+- Check logs for "fallback to origin" messages
+- Verify agent endpoints and network connectivity
 
-1. **Use shared cache** - Store data in `ngx.shared.cache` instead of local variables
-2. **Early exit** - Put most common blocks first
-3. **Minimize regex** - Use string.find() instead of complex patterns
-4. **Cache results** - Cache expensive lookups
-5. **Keep it simple** - Complex Lua scripts can slow down requests
+### Future Enhancements
 
-## Security Considerations
+- Automatic agent discovery via Core API
+- Health-based routing (avoid unhealthy agents)
+- Load-based routing (prefer less loaded agents)
+- Geographic routing (prefer closer agents)
+- Agent-to-agent authentication
+- Performance optimization
 
-1. **Test before production** - Always test rules in staging
-2. **Monitor logs** - Check if legitimate users are blocked
-3. **Set reasonable limits** - Don't block too aggressively
-4. **Keep rules updated** - Update attack patterns regularly
-5. **Use whitelists** - Whitelist known good IPs
+### Documentation
 
-## Debugging
+- **ADR:** `docs/ADR/ADR-0005-agent-to-agent-anycast-routing.md`
+- **Feature:** `docs/Features/Feature-AnycastRouting.md`
+- **Architecture:** `docs/Architecture/Overview.md`
 
-To debug WAF rules, check agent logs:
+### Feedback
 
-```bash
-# If using systemd
-sudo journalctl -u defenra-agent -f | grep WAF
-
-# If using Docker
-docker logs -f defenra-agent | grep WAF
-```
-
-You'll see logs like:
-```
-[WAF] Request blocked by WAF: http://example.com/admin
-[WAF] Lua execution error: attempt to call nil value
-```
-
-## Support
-
-For questions about WAF rules:
-- GitHub: https://github.com/defenra/agent/issues
-- Documentation: https://docs.defenra.com/waf
-- Email: support@defenra.com
+This is a BETA feature. Please report issues and feedback to help improve it.

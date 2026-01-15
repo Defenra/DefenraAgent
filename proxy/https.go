@@ -209,18 +209,31 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	target := customBackend
-	if target == "" {
-		target = s.findProxyTarget(domainConfig, host)
+	// Determine proxy target (origin or custom backend from Page Rule)
+	originTarget := customBackend
+	if originTarget == "" {
+		originTarget = s.findProxyTarget(domainConfig, host)
 	}
-	if target == "" {
+	if originTarget == "" {
 		log.Printf("[HTTPS] No backend found for: %s", host)
 		http.Error(w, "No backend available", http.StatusBadGateway)
 		atomic.AddUint64(&s.stats.ProxyErrors, 1)
 		return
 	}
 
-	s.proxyRequest(w, r, target)
+	// Make routing decision (direct or anycast)
+	decision := RouteRequest(r, domainConfig, originTarget)
+	log.Printf("[HTTPS] Routing decision: mode=%s, target=%s, isAgent=%v, hopCount=%d, reason=%s",
+		decision.Mode, decision.Target, decision.IsAgent, decision.HopCount, decision.Reason)
+
+	// If routing to another agent, add hop tracking header
+	if decision.IsAgent {
+		agentID := GetAgentID()
+		AddHopHeader(r, agentID)
+		log.Printf("[HTTPS] Added hop header: %s (total hops: %d)", agentID, decision.HopCount+1)
+	}
+
+	s.proxyRequest(w, r, decision.Target)
 }
 
 func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host string) string {
