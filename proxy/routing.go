@@ -60,7 +60,7 @@ func RouteRequest(r *http.Request, domainConfig *config.Domain, originTarget str
 	}
 }
 
-// routeAnycast implements anycast routing logic
+// routeAnycast implements anycast routing logic with automatic agent discovery
 func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget string) RoutingDecision {
 	// Parse current hop count and path from header
 	hopCount, hopPath := parseHopHeader(r)
@@ -83,20 +83,60 @@ func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget str
 		}
 	}
 
-	// Check if agent pool is empty
-	if len(domainConfig.HTTPProxy.AgentPool) == 0 {
+	// Get agent discovery service
+	discovery := GetGlobalAgentDiscovery()
+	if discovery == nil {
 		return RoutingDecision{
 			Mode:     "anycast",
 			Target:   originTarget,
 			IsAgent:  false,
 			HopCount: hopCount,
 			HopPath:  hopPath,
-			Reason:   "agent pool is empty",
+			Reason:   "agent discovery not initialized",
 		}
 	}
 
-	// Select next agent from pool
-	selectedAgent := selectAgent(domainConfig.HTTPProxy.AgentPool)
+	// Get healthy agents from discovery
+	healthyAgents := discovery.GetHealthyAgents()
+	if len(healthyAgents) == 0 {
+		return RoutingDecision{
+			Mode:     "anycast",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: hopCount,
+			HopPath:  hopPath,
+			Reason:   "no healthy agents available",
+		}
+	}
+
+	// Filter out agents already in the hop path to prevent loops
+	visitedAgents := make(map[string]bool)
+	if hopPath != "" {
+		for _, agentID := range strings.Split(hopPath, ",") {
+			visitedAgents[strings.TrimSpace(agentID)] = true
+		}
+	}
+
+	availableAgents := make([]*DiscoveredAgent, 0)
+	for _, agent := range healthyAgents {
+		if !visitedAgents[agent.AgentID] {
+			availableAgents = append(availableAgents, agent)
+		}
+	}
+
+	if len(availableAgents) == 0 {
+		return RoutingDecision{
+			Mode:     "anycast",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: hopCount,
+			HopPath:  hopPath,
+			Reason:   "all agents already visited (loop prevention)",
+		}
+	}
+
+	// Select best agent based on health score and latency
+	selectedAgent := selectBestAgent(availableAgents)
 	if selectedAgent == nil {
 		return RoutingDecision{
 			Mode:     "anycast",
@@ -104,7 +144,7 @@ func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget str
 			IsAgent:  false,
 			HopCount: hopCount,
 			HopPath:  hopPath,
-			Reason:   "no agent selected from pool",
+			Reason:   "no agent selected",
 		}
 	}
 
@@ -114,7 +154,7 @@ func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget str
 		IsAgent:  true,
 		HopCount: hopCount,
 		HopPath:  hopPath,
-		Reason:   fmt.Sprintf("selected agent %s from pool", selectedAgent.ID),
+		Reason:   fmt.Sprintf("selected agent %s (health: %.2f, latency: %v)", selectedAgent.AgentID, selectedAgent.HealthScore, selectedAgent.Latency),
 	}
 }
 
@@ -142,7 +182,34 @@ func AddHopHeader(r *http.Request, agentID string) {
 	}
 }
 
+// selectBestAgent selects the best agent based on health score and latency
+func selectBestAgent(agents []*DiscoveredAgent) *DiscoveredAgent {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	// Sort agents by health score (descending)
+	var best *DiscoveredAgent
+	bestScore := 0.0
+
+	for _, agent := range agents {
+		if agent.HealthScore > bestScore {
+			bestScore = agent.HealthScore
+			best = agent
+		}
+	}
+
+	return best
+}
+
+// GetGlobalAgentDiscovery returns the global agent discovery instance
+// Returns nil if not initialized (will be initialized in main.go)
+func GetGlobalAgentDiscovery() *AgentDiscovery {
+	return globalAgentDiscovery
+}
+
 // selectAgent selects an agent from the pool using a simple algorithm
+// DEPRECATED: Use automatic discovery instead
 // For BETA: random selection with priority consideration
 func selectAgent(pool []config.AgentInfo) *config.AgentInfo {
 	if len(pool) == 0 {
