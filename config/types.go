@@ -31,9 +31,19 @@ type DNSRecord struct {
 }
 
 type HTTPProxy struct {
-	Type     string    `json:"type"`
-	Enabled  bool      `json:"enabled"`
-	AntiDDoS *AntiDDoS `json:"antiDDoS,omitempty"`
+	Type        string      `json:"type"`
+	Enabled     bool        `json:"enabled"`
+	RoutingMode string      `json:"routingMode"` // "direct" (default) or "anycast" (BETA)
+	AgentPool   []AgentInfo `json:"agentPool"`   // for anycast mode
+	MaxHops     int         `json:"maxHops"`     // default: 3
+	AntiDDoS    *AntiDDoS   `json:"antiDDoS,omitempty"`
+}
+
+type AgentInfo struct {
+	ID       string `json:"id"`       // agent identifier
+	Endpoint string `json:"endpoint"` // https://agent-ip:port or http://agent-ip:port
+	Region   string `json:"region"`   // optional: geographic region
+	Priority int    `json:"priority"` // optional: routing priority (lower = higher priority)
 }
 
 type AntiDDoS struct {

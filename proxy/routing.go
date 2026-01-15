@@ -1,0 +1,185 @@
+package proxy
+
+import (
+	"fmt"
+	"log"
+	"math/rand"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/defenra/agent/config"
+)
+
+const (
+	// DefaultMaxHops is the default maximum number of agent hops before routing to origin
+	DefaultMaxHops = 3
+
+	// HopHeaderName is the header used to track routing path
+	HopHeaderName = "X-Defenra-Hop"
+)
+
+// RoutingDecision represents the result of a routing decision
+type RoutingDecision struct {
+	Mode     string // "direct" or "anycast"
+	Target   string // target endpoint (agent or origin)
+	IsAgent  bool   // true if target is an agent, false if origin
+	HopCount int    // current hop count
+	HopPath  string // comma-separated list of agent IDs in path
+	Reason   string // reason for the decision (for logging)
+}
+
+// RouteRequest determines where to route the request based on configuration
+func RouteRequest(r *http.Request, domainConfig *config.Domain, originTarget string) RoutingDecision {
+	// Default to direct routing
+	if domainConfig.HTTPProxy.RoutingMode == "" || domainConfig.HTTPProxy.RoutingMode == "direct" {
+		return RoutingDecision{
+			Mode:     "direct",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: 0,
+			HopPath:  "",
+			Reason:   "routing mode is direct",
+		}
+	}
+
+	// Anycast routing
+	if domainConfig.HTTPProxy.RoutingMode == "anycast" {
+		return routeAnycast(r, domainConfig, originTarget)
+	}
+
+	// Unknown routing mode, fallback to direct
+	log.Printf("[Routing] Unknown routing mode: %s, falling back to direct", domainConfig.HTTPProxy.RoutingMode)
+	return RoutingDecision{
+		Mode:     "direct",
+		Target:   originTarget,
+		IsAgent:  false,
+		HopCount: 0,
+		HopPath:  "",
+		Reason:   fmt.Sprintf("unknown routing mode: %s", domainConfig.HTTPProxy.RoutingMode),
+	}
+}
+
+// routeAnycast implements anycast routing logic
+func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget string) RoutingDecision {
+	// Parse current hop count and path from header
+	hopCount, hopPath := parseHopHeader(r)
+
+	// Determine max hops
+	maxHops := domainConfig.HTTPProxy.MaxHops
+	if maxHops <= 0 {
+		maxHops = DefaultMaxHops
+	}
+
+	// Check if we've reached the hop limit
+	if hopCount >= maxHops {
+		return RoutingDecision{
+			Mode:     "anycast",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: hopCount,
+			HopPath:  hopPath,
+			Reason:   fmt.Sprintf("hop limit reached (%d >= %d)", hopCount, maxHops),
+		}
+	}
+
+	// Check if agent pool is empty
+	if len(domainConfig.HTTPProxy.AgentPool) == 0 {
+		return RoutingDecision{
+			Mode:     "anycast",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: hopCount,
+			HopPath:  hopPath,
+			Reason:   "agent pool is empty",
+		}
+	}
+
+	// Select next agent from pool
+	selectedAgent := selectAgent(domainConfig.HTTPProxy.AgentPool)
+	if selectedAgent == nil {
+		return RoutingDecision{
+			Mode:     "anycast",
+			Target:   originTarget,
+			IsAgent:  false,
+			HopCount: hopCount,
+			HopPath:  hopPath,
+			Reason:   "no agent selected from pool",
+		}
+	}
+
+	return RoutingDecision{
+		Mode:     "anycast",
+		Target:   selectedAgent.Endpoint,
+		IsAgent:  true,
+		HopCount: hopCount,
+		HopPath:  hopPath,
+		Reason:   fmt.Sprintf("selected agent %s from pool", selectedAgent.ID),
+	}
+}
+
+// parseHopHeader extracts hop count and path from X-Defenra-Hop header
+func parseHopHeader(r *http.Request) (int, string) {
+	hopHeader := r.Header.Get(HopHeaderName)
+	if hopHeader == "" {
+		return 0, ""
+	}
+
+	// Header format: "agent-id-1,agent-id-2,agent-id-3"
+	hops := strings.Split(hopHeader, ",")
+	hopCount := len(hops)
+
+	return hopCount, hopHeader
+}
+
+// AddHopHeader adds the current agent ID to the hop tracking header
+func AddHopHeader(r *http.Request, agentID string) {
+	currentHops := r.Header.Get(HopHeaderName)
+	if currentHops == "" {
+		r.Header.Set(HopHeaderName, agentID)
+	} else {
+		r.Header.Set(HopHeaderName, currentHops+","+agentID)
+	}
+}
+
+// selectAgent selects an agent from the pool using a simple algorithm
+// For BETA: random selection with priority consideration
+func selectAgent(pool []config.AgentInfo) *config.AgentInfo {
+	if len(pool) == 0 {
+		return nil
+	}
+
+	// Filter agents by priority (lower priority value = higher priority)
+	// If no priorities set, all agents have priority 0
+	minPriority := pool[0].Priority
+	for _, agent := range pool {
+		if agent.Priority < minPriority {
+			minPriority = agent.Priority
+		}
+	}
+
+	// Collect agents with highest priority (lowest priority value)
+	highPriorityAgents := make([]config.AgentInfo, 0)
+	for _, agent := range pool {
+		if agent.Priority == minPriority {
+			highPriorityAgents = append(highPriorityAgents, agent)
+		}
+	}
+
+	// Random selection from high priority agents
+	if len(highPriorityAgents) == 0 {
+		return nil
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	selected := highPriorityAgents[rand.Intn(len(highPriorityAgents))]
+	return &selected
+}
+
+// GetAgentID returns a unique identifier for this agent
+// For BETA: use hostname or generate a simple ID
+func GetAgentID() string {
+	// TODO: In production, this should be configured or derived from agent registration
+	// For BETA, use a simple timestamp-based ID
+	return fmt.Sprintf("agent-%d", time.Now().Unix()%10000)
+}
