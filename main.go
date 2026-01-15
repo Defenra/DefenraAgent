@@ -74,6 +74,11 @@ func main() {
 	// Initialize HTTP client provider for health checks
 	proxy.InitHTTPClientProvider()
 
+	// Initialize agent discovery for anycast routing
+	log.Println("Starting Agent Discovery...")
+	agentDiscovery := proxy.GetAgentDiscovery(coreURL, agentKey)
+	_ = agentDiscovery // Discovery starts automatically
+
 	// настраиваем статистику коллектор
 	statsCollector := stats.GetCollector()
 	statsCollector.SetConfig(coreURL, agentID, agentKey)

@@ -251,20 +251,37 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 		host = host[:idx]
 	}
 
-	domainConfig := s.configMgr.GetDomain(host)
-	encryptionMode := "flexible" // default for HTTP proxy
-	if domainConfig != nil && domainConfig.SSL.EncryptionMode != "" {
-		encryptionMode = domainConfig.SSL.EncryptionMode
-	}
+	// Check if target is another agent (has X-Defenra-Hop header or target looks like agent endpoint)
+	isAgentTarget := r.Header.Get(HopHeaderName) != "" || strings.HasPrefix(target, "https://")
 
-	// Determine target URL scheme based on encryption mode
-	// Flexible mode ALWAYS uses HTTP to origin (no certificate validation)
-	// Full modes use HTTPS to origin with different validation levels
-	scheme := "http"
-	if encryptionMode == "full" || encryptionMode == "full_strict" {
+	domainConfig := s.configMgr.GetDomain(host)
+
+	var scheme string
+	var encryptionMode string
+
+	if isAgentTarget {
+		// Agent-to-agent communication: always use HTTPS
 		scheme = "https"
+		encryptionMode = "agent_to_agent"
+	} else {
+		// Agent-to-origin communication: use domain's encryption mode from Core
+		if domainConfig != nil && domainConfig.SSL.EncryptionMode != "" {
+			encryptionMode = domainConfig.SSL.EncryptionMode
+		} else {
+			// No encryption mode configured - use flexible as fallback
+			encryptionMode = "flexible"
+		}
+
+		// Determine target URL scheme based on encryption mode
+		// Flexible mode: HTTP to origin (client-to-agent is HTTPS, agent-to-origin is HTTP)
+		// Full modes: HTTPS to origin with different validation levels
+		// Off mode: HTTP to origin (no encryption at all)
+		scheme = "http"
+		if encryptionMode == "full" || encryptionMode == "full_strict" {
+			scheme = "https"
+		}
+		// "flexible" and "off" modes use HTTP to origin
 	}
-	// "flexible" and "off" modes always use HTTP to origin
 
 	targetURL := fmt.Sprintf("%s://%s%s", scheme, target, r.RequestURI)
 
@@ -405,7 +422,15 @@ func createHTTPClient(encryptionMode string) *http.Client {
 	}
 
 	// Configure TLS based on encryption mode
-	if encryptionMode == "full" {
+	if encryptionMode == "agent_to_agent" {
+		// Agent-to-agent communication: accept any certificate for now
+		// TODO: Implement mutual TLS authentication between agents
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	} else if encryptionMode == "full" {
 		// Full mode: accept any certificate (self-signed, expired, etc.)
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{
