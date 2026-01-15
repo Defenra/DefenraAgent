@@ -71,8 +71,8 @@ func main() {
 	log.Println("Starting Health Check on :8080...")
 	go health.StartHealthCheck(configMgr)
 
-	// регистрируем ClientTracker в health server
-	health.SetClientTracker(proxy.GetGlobalClientTracker())
+	// Initialize HTTP client provider for health checks
+	proxy.InitHTTPClientProvider()
 
 	// настраиваем статистику коллектор
 	statsCollector := stats.GetCollector()
@@ -84,6 +84,15 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			statsCollector.SendStatistics()
+		}
+	}()
+
+	// запускаем отправку данных о клиентах каждые 2 минуты
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			statsCollector.SendClientData()
 		}
 	}()
 

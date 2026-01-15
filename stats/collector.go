@@ -26,16 +26,17 @@ type ResourceStats struct {
 }
 
 type StatisticsCollector struct {
-	mu            sync.RWMutex
-	proxyStats    map[string]*ResourceStats
-	domainStats   map[string]*ResourceStats
-	httpStats     *proxy.HTTPStats
-	httpsStats    *proxy.HTTPStats
-	firewallStats firewall.FirewallStats
-	client        *http.Client
-	coreURL       string
-	agentID       string
-	agentKey      string
+	mu             sync.RWMutex
+	proxyStats     map[string]*ResourceStats
+	domainStats    map[string]*ResourceStats
+	httpStats      *proxy.HTTPStats
+	httpsStats     *proxy.HTTPStats
+	firewallStats  firewall.FirewallStats
+	client         *http.Client
+	coreURL        string
+	agentID        string
+	agentKey       string
+	clientReporter *ClientReporter
 }
 
 var globalCollector *StatisticsCollector
@@ -60,6 +61,7 @@ func (sc *StatisticsCollector) SetConfig(coreURL, agentID, agentKey string) {
 	sc.coreURL = coreURL
 	sc.agentID = agentID
 	sc.agentKey = agentKey
+	sc.clientReporter = NewClientReporter(coreURL, agentID, agentKey)
 }
 
 func (sc *StatisticsCollector) SetHTTPStats(stats proxy.HTTPStats) {
@@ -226,4 +228,41 @@ func (sc *StatisticsCollector) sendPayloadUnsafe(payload StatisticsPayload) {
 	}
 
 	log.Printf("[Stats] Successfully sent statistics for %s/%s", payload.ResourceType, payload.ResourceID)
+}
+
+// SendClientData sends HTTP/HTTPS client data to Core
+func (sc *StatisticsCollector) SendClientData() {
+	sc.mu.RLock()
+	if sc.clientReporter == nil {
+		sc.mu.RUnlock()
+		return
+	}
+	reporter := sc.clientReporter
+	agentID := sc.agentID
+	sc.mu.RUnlock()
+
+	// Get HTTP/HTTPS clients from proxy package
+	tracker := proxy.GetGlobalHTTPClientTracker()
+	clients := tracker.GetClients()
+
+	for _, client := range clients {
+		payload := ClientReportPayload{
+			AgentID:       agentID,
+			IP:            client.IP,
+			UserAgent:     client.UserAgent,
+			Country:       client.Country,
+			City:          client.City,
+			CountryCode:   client.CountryCode,
+			BytesSent:     client.BytesSent,
+			BytesReceived: client.BytesReceived,
+		}
+
+		if err := reporter.ReportClient(payload); err != nil {
+			log.Printf("[Stats] Failed to report client %s: %v", client.IP, err)
+		}
+	}
+
+	if len(clients) > 0 {
+		log.Printf("[Stats] Reported %d HTTP/HTTPS clients to Core", len(clients))
+	}
 }

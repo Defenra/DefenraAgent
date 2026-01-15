@@ -258,10 +258,13 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	}
 
 	// Determine target URL scheme based on encryption mode
+	// Flexible mode ALWAYS uses HTTP to origin (no certificate validation)
+	// Full modes use HTTPS to origin with different validation levels
 	scheme := "http"
 	if encryptionMode == "full" || encryptionMode == "full_strict" {
 		scheme = "https"
 	}
+	// "flexible" and "off" modes always use HTTP to origin
 
 	targetURL := fmt.Sprintf("%s://%s%s", scheme, target, r.RequestURI)
 
@@ -279,13 +282,15 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 		}
 	}
 
-	proxyReq.Header.Set("X-Forwarded-For", getClientIP(r))
+	clientIP := getClientIP(r)
+	proxyReq.Header.Set("X-Forwarded-For", clientIP)
 	proxyReq.Header.Set("X-Forwarded-Proto", "http")
-	proxyReq.Header.Set("X-Real-IP", getClientIP(r))
+	proxyReq.Header.Set("X-Real-IP", clientIP)
 
 	// Create HTTP client with TLS configuration based on encryption mode
 	client := createHTTPClient(encryptionMode)
 
+	startTime := time.Now()
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		log.Printf("[HTTP] Error proxying request: %v", err)
@@ -302,11 +307,31 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	}
 
 	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("[HTTP] Error copying response body: %v", err)
+
+	// Track traffic
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[HTTP] Error reading response body: %v", err)
+		return
 	}
 
-	log.Printf("[HTTP] Proxied: %s → %s (status: %d)", r.Host+r.RequestURI, target, resp.StatusCode)
+	if _, err := w.Write(bodyBytes); err != nil {
+		log.Printf("[HTTP] Error writing response: %v", err)
+		return
+	}
+
+	// Calculate traffic
+	requestSize := uint64(len(r.RequestURI) + len(r.Method) + 100) // approximate request size
+	responseSize := uint64(len(bodyBytes))
+
+	// Track client with traffic and geolocation
+	tracker := GetGlobalHTTPClientTracker()
+	userAgent := r.Header.Get("User-Agent")
+	tracker.TrackRequest(clientIP, userAgent, host, requestSize, responseSize)
+
+	duration := time.Since(startTime)
+	log.Printf("[HTTP] Proxied: %s → %s (status: %d, duration: %v, sent: %d, received: %d)",
+		r.Host+r.RequestURI, target, resp.StatusCode, duration, requestSize, responseSize)
 }
 
 func getClientIP(r *http.Request) string {

@@ -227,10 +227,23 @@ type ClientInfo struct {
 }
 
 func (h *HealthServer) handleClients(w http.ResponseWriter, r *http.Request) {
-	// Получаем параметр port если указан
+	// Получаем параметр port если указан (для TCP/UDP прокси)
 	portFilter := r.URL.Query().Get("port")
+	// Получаем параметр domain если указан (для HTTP/HTTPS)
+	domainFilter := r.URL.Query().Get("domain")
 
-	clients := getActiveClients(portFilter)
+	var clients []ClientInfo
+
+	if portFilter != "" {
+		// TCP/UDP proxy clients
+		clients = getActiveClients(portFilter)
+	} else if domainFilter != "" {
+		// HTTP/HTTPS clients for specific domain
+		clients = GetHTTPClientsByDomain(domainFilter)
+	} else {
+		// All HTTP/HTTPS clients
+		clients = GetAllHTTPClients()
+	}
 
 	response := ClientsResponse{
 		Clients: clients,

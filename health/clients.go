@@ -1,11 +1,10 @@
 package health
 
 import (
-	"strconv"
 	"time"
 )
 
-// ClientConnection представляет информацию о подключенном клиенте
+// ClientConnection represents a client connection (used by TCP proxy)
 type ClientConnection struct {
 	IP            string
 	ConnectedAt   time.Time
@@ -16,50 +15,90 @@ type ClientConnection struct {
 	ProxyPort     int
 }
 
-// ClientTrackerInterface определяет интерфейс для получения клиентов
-type ClientTrackerInterface interface {
-	GetClients() []*ClientConnection
+// HTTPClientProvider is an interface for getting HTTP/HTTPS clients
+type HTTPClientProvider interface {
+	GetAllClients() []HTTPClientInfo
+	GetClientsByDomain(domain string) []HTTPClientInfo
 }
 
-var globalClientTracker ClientTrackerInterface
-
-// SetClientTracker устанавливает глобальный трекер клиентов
-func SetClientTracker(tracker ClientTrackerInterface) {
-	globalClientTracker = tracker
+// HTTPClientInfo represents an HTTP/HTTPS client
+type HTTPClientInfo struct {
+	IP            string
+	ConnectedAt   time.Time
+	LastActivity  time.Time
+	BytesSent     uint64
+	BytesReceived uint64
+	Country       string
+	City          string
+	CountryCode   string
+	UserAgent     string
+	Domain        string
 }
 
-// getActiveClients получает список активных клиентов из ClientTracker
-func getActiveClients(portFilter string) []ClientInfo {
-	if globalClientTracker == nil {
+var httpClientProvider HTTPClientProvider
+
+// SetHTTPClientProvider sets the HTTP client provider
+func SetHTTPClientProvider(provider HTTPClientProvider) {
+	httpClientProvider = provider
+}
+
+// GetAllHTTPClients returns all HTTP/HTTPS clients
+func GetAllHTTPClients() []ClientInfo {
+	if httpClientProvider == nil {
 		return []ClientInfo{}
 	}
 
-	clients := globalClientTracker.GetClients()
-	result := make([]ClientInfo, 0, len(clients))
+	httpClients := httpClientProvider.GetAllClients()
+	clients := make([]ClientInfo, 0, len(httpClients))
 
-	for _, client := range clients {
-		// Фильтруем по порту если указан
-		if portFilter != "" {
-			filterPort, err := strconv.Atoi(portFilter)
-			if err == nil && client.ProxyPort != filterPort {
-				continue
-			}
-		}
-
-		duration := time.Since(client.ConnectedAt)
-
-		result = append(result, ClientInfo{
-			IP:            client.IP,
-			ConnectedAt:   client.ConnectedAt.Format(time.RFC3339),
-			LastActivity:  client.LastActivity.Format(time.RFC3339),
+	for _, hc := range httpClients {
+		duration := time.Since(hc.ConnectedAt)
+		clients = append(clients, ClientInfo{
+			IP:            hc.IP,
+			ConnectedAt:   hc.ConnectedAt.Format(time.RFC3339),
+			LastActivity:  hc.LastActivity.Format(time.RFC3339),
 			Duration:      formatDuration(duration),
-			BytesSent:     client.BytesSent,
-			BytesReceived: client.BytesReceived,
-			TotalBytes:    client.BytesSent + client.BytesReceived,
-			ProxyID:       client.ProxyID,
-			ProxyPort:     client.ProxyPort,
+			BytesSent:     hc.BytesSent,
+			BytesReceived: hc.BytesReceived,
+			TotalBytes:    hc.BytesSent + hc.BytesReceived,
+			ProxyID:       hc.Domain,
+			ProxyPort:     0, // Not applicable for HTTP/HTTPS
 		})
 	}
 
-	return result
+	return clients
+}
+
+// GetHTTPClientsByDomain returns HTTP/HTTPS clients for a specific domain
+func GetHTTPClientsByDomain(domain string) []ClientInfo {
+	if httpClientProvider == nil {
+		return []ClientInfo{}
+	}
+
+	httpClients := httpClientProvider.GetClientsByDomain(domain)
+	clients := make([]ClientInfo, 0, len(httpClients))
+
+	for _, hc := range httpClients {
+		duration := time.Since(hc.ConnectedAt)
+		clients = append(clients, ClientInfo{
+			IP:            hc.IP,
+			ConnectedAt:   hc.ConnectedAt.Format(time.RFC3339),
+			LastActivity:  hc.LastActivity.Format(time.RFC3339),
+			Duration:      formatDuration(duration),
+			BytesSent:     hc.BytesSent,
+			BytesReceived: hc.BytesReceived,
+			TotalBytes:    hc.BytesSent + hc.BytesReceived,
+			ProxyID:       hc.Domain,
+			ProxyPort:     0,
+		})
+	}
+
+	return clients
+}
+
+// getActiveClients returns TCP/UDP proxy clients
+func getActiveClients(portFilter string) []ClientInfo {
+	// This will be implemented by proxy package
+	// For now, return empty list
+	return []ClientInfo{}
 }
