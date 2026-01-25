@@ -59,6 +59,14 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 }
 
 func (s *HTTPSProxyServer) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	// Extract TLS fingerprint for L7 protection
+	tlsFingerprint := firewall.ExtractTLSFingerprint(hello)
+	if tlsFingerprint != "" {
+		// Store fingerprint for this connection
+		remoteAddr := hello.Conn.RemoteAddr().String()
+		firewall.StoreTLSFingerprint(remoteAddr, tlsFingerprint)
+	}
+
 	domainConfig := s.configMgr.GetDomain(hello.ServerName)
 	if domainConfig == nil {
 		log.Printf("[HTTPS] No config found for domain: %s", hello.ServerName)
@@ -99,6 +107,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	clientIP := getClientIP(r)
 	log.Printf("[HTTPS] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
 
+	// Get TLS fingerprint for this connection
+	tlsFingerprint := firewall.GetTLSFingerprint(r.RemoteAddr)
+
 	// проверка iptables банов
 	if s.firewallMgr != nil && s.firewallMgr.IsBanned(clientIP) {
 		log.Printf("[HTTPS] Request blocked: IP %s is banned", clientIP)
@@ -122,6 +133,122 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	if handled {
 		// Request was handled by Page Rules (redirect, etc)
 		return
+	}
+
+	// L7 Anti-DDoS Protection
+	if !skipSecurity && domainConfig.HTTPProxy.AntiDDoS != nil && domainConfig.HTTPProxy.AntiDDoS.L7Protection != nil && domainConfig.HTTPProxy.AntiDDoS.L7Protection.Enabled {
+		l7Config := &firewall.L7Config{
+			FingerprintRateLimit:   domainConfig.HTTPProxy.AntiDDoS.L7Protection.FingerprintRateLimit,
+			IPRateLimit:            domainConfig.HTTPProxy.AntiDDoS.L7Protection.IPRateLimit,
+			FailChallengeRateLimit: domainConfig.HTTPProxy.AntiDDoS.L7Protection.FailChallengeRateLimit,
+			SuspiciousThreshold:    domainConfig.HTTPProxy.AntiDDoS.L7Protection.SuspiciousThreshold,
+			RateWindow:             10 * time.Second,
+			KnownFingerprints:      firewall.GetKnownFingerprints(),
+			BotFingerprints:        firewall.GetBotFingerprints(),
+			BlockedFingerprints:    make(map[string]string),
+			AllowedFingerprints:    make(map[string]string),
+		}
+
+		// Add custom blocked/allowed fingerprints
+		for _, fp := range domainConfig.HTTPProxy.AntiDDoS.L7Protection.BlockedFingerprints {
+			l7Config.BlockedFingerprints[fp] = "Custom Block"
+		}
+		for _, fp := range domainConfig.HTTPProxy.AntiDDoS.L7Protection.AllowedFingerprints {
+			l7Config.AllowedFingerprints[fp] = "Custom Allow"
+		}
+
+		l7Protection := firewall.NewL7Protection(l7Config)
+		defer l7Protection.Stop()
+
+		suspicionLevel, browserType, err := l7Protection.AnalyzeRequest(r, clientIP, tlsFingerprint)
+		
+		if err != nil {
+			log.Printf("[HTTPS] L7 analysis error: %v", err)
+			atomic.AddUint64(&s.stats.BlockedRequests, 1)
+			http.Error(w, "Request blocked", http.StatusForbidden)
+			return
+		}
+
+		if suspicionLevel < 0 {
+			log.Printf("[HTTPS] Request blocked by L7 protection: %s", browserType)
+			atomic.AddUint64(&s.stats.BlockedRequests, 1)
+			http.Error(w, "Request blocked", http.StatusForbidden)
+			return
+		}
+
+		// Apply custom firewall rules if configured
+		if len(domainConfig.HTTPProxy.AntiDDoS.CustomRules) > 0 {
+			ruleEngine := firewall.NewRuleEngine()
+			for _, rule := range domainConfig.HTTPProxy.AntiDDoS.CustomRules {
+				if rule.Enabled {
+					ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled)
+				}
+			}
+
+			// Get connection info for rule context
+			connInfo := l7Protection.GetConnectionInfo(clientIP)
+			requestCount := 0
+			challengeCount := 0
+			if connInfo != nil {
+				requestCount = int(connInfo.RequestCount)
+				challengeCount = int(connInfo.ChallengeFails)
+			}
+
+			// Build rule context
+			country, asn := firewall.GetGeoInfo(clientIP)
+			ctx := firewall.BuildRequestContext(r, clientIP, country, asn, browserType, "", tlsFingerprint, 
+				requestCount, challengeCount, suspicionLevel, 0, false)
+
+			// Evaluate rules
+			suspicionLevel = ruleEngine.EvaluateRules(ctx, suspicionLevel)
+		}
+
+		// Handle challenges based on suspicion level
+		challengeSettings := domainConfig.HTTPProxy.AntiDDoS.ChallengeSettings
+		if challengeSettings != nil && suspicionLevel > 0 {
+			challengeMgr := firewall.GetChallengeManager()
+
+			switch suspicionLevel {
+			case 1:
+				// Cookie challenge
+				if challengeSettings.CookieChallenge != nil && challengeSettings.CookieChallenge.Enabled {
+					if !challengeMgr.ValidateCookieChallenge(r, clientIP) {
+						l7Protection.RecordChallengeFailure(clientIP)
+						response := challengeMgr.IssueCookieChallenge(w, r, clientIP)
+						s.sendChallengeResponse(w, response)
+						return
+					}
+				}
+			case 2:
+				// JavaScript PoW challenge
+				if challengeSettings.JSChallenge != nil && challengeSettings.JSChallenge.Enabled {
+					if !challengeMgr.ValidateJSChallenge(r, challengeSettings.JSChallenge.Difficulty) {
+						l7Protection.RecordChallengeFailure(clientIP)
+						response := challengeMgr.IssueJSChallenge(w, r, clientIP, challengeSettings.JSChallenge.Difficulty)
+						s.sendChallengeResponse(w, response)
+						return
+					}
+				}
+			case 3:
+				// CAPTCHA challenge
+				if challengeSettings.CaptchaChallenge != nil && challengeSettings.CaptchaChallenge.Enabled {
+					if !challengeMgr.ValidateCaptchaChallenge(r) {
+						l7Protection.RecordChallengeFailure(clientIP)
+						response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
+						s.sendChallengeResponse(w, response)
+						return
+					}
+				}
+			default:
+				if suspicionLevel >= 4 {
+					// Block high suspicion requests
+					log.Printf("[HTTPS] Request blocked: high suspicion level %d", suspicionLevel)
+					atomic.AddUint64(&s.stats.BlockedRequests, 1)
+					http.Error(w, "Request blocked", http.StatusForbidden)
+					return
+				}
+			}
+		}
 	}
 
 	// проверка whitelist и rate limiting
@@ -365,6 +492,14 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	duration := time.Since(startTime)
 	log.Printf("[HTTPS] Proxied: %s → %s (status: %d, duration: %v, sent: %d, received: %d)",
 		r.Host+r.RequestURI, target, resp.StatusCode, duration, requestSize, responseSize)
+}
+
+func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response firewall.ChallengeResponse) {
+	for key, value := range response.Headers {
+		w.Header().Set(key, value)
+	}
+	w.WriteHeader(response.StatusCode)
+	w.Write([]byte(response.Body))
 }
 
 func (s *HTTPSProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
