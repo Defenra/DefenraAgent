@@ -55,12 +55,12 @@ func TestL7Protection(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 
-		if suspicion != 1 {
-			t.Errorf("Expected suspicion level 1 for unknown fingerprint, got %d", suspicion)
+		if suspicion != 0 {
+			t.Errorf("Expected suspicion level 0 for normal browser with unknown fingerprint, got %d", suspicion)
 		}
 
-		if browserType != "Unknown" {
-			t.Errorf("Expected browser type 'Unknown', got '%s'", browserType)
+		if browserType != "Normal User-Agent" {
+			t.Errorf("Expected browser type 'Normal User-Agent', got '%s'", browserType)
 		}
 	})
 
@@ -83,6 +83,7 @@ func TestL7Protection(t *testing.T) {
 
 	t.Run("IP rate limiting", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36") // Normal browser
 		clientIP := "192.168.1.103"
 		tlsFingerprint := ""
 
@@ -97,7 +98,7 @@ func TestL7Protection(t *testing.T) {
 			}
 		}
 
-		// Next request should be blocked
+		// Next request should be blocked by IP rate limit
 		suspicion, _, err := l7.AnalyzeRequest(req, clientIP, tlsFingerprint)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
@@ -117,6 +118,7 @@ func TestL7Protection(t *testing.T) {
 		}
 
 		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36") // Normal browser
 		suspicion, _, err := l7.AnalyzeRequest(req, clientIP, "")
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
