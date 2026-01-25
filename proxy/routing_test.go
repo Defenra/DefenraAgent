@@ -73,15 +73,15 @@ func TestRouteRequest_AnycastMode(t *testing.T) {
 		wantReason   string
 	}{
 		{
-			name: "routes to agent when pool not empty and under hop limit",
+			name: "routes to origin when agent discovery not initialized",
 			agentPool: []config.AgentInfo{
 				{ID: "agent-1", Endpoint: "http://agent1:8080"},
 			},
 			maxHops:      3,
 			hopCount:     0,
 			originTarget: "192.168.1.100",
-			wantIsAgent:  true,
-			wantReason:   "selected agent",
+			wantIsAgent:  false,
+			wantReason:   "agent discovery not initialized",
 		},
 		{
 			name:         "routes to origin when agent pool empty",
@@ -90,7 +90,7 @@ func TestRouteRequest_AnycastMode(t *testing.T) {
 			hopCount:     0,
 			originTarget: "192.168.1.100",
 			wantIsAgent:  false,
-			wantReason:   "agent pool is empty",
+			wantReason:   "agent discovery not initialized",
 		},
 		{
 			name: "routes to origin when hop limit reached",
@@ -104,15 +104,15 @@ func TestRouteRequest_AnycastMode(t *testing.T) {
 			wantReason:   "hop limit reached",
 		},
 		{
-			name: "uses default max hops when not configured",
+			name: "routes to origin when agent discovery not available",
 			agentPool: []config.AgentInfo{
 				{ID: "agent-1", Endpoint: "http://agent1:8080"},
 			},
 			maxHops:      0, // will use DefaultMaxHops
 			hopCount:     0,
 			originTarget: "192.168.1.100",
-			wantIsAgent:  true,
-			wantReason:   "selected agent",
+			wantIsAgent:  false,
+			wantReason:   "agent discovery not initialized",
 		},
 	}
 
