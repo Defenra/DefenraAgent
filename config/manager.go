@@ -287,11 +287,35 @@ func (cm *ConfigManager) GetDomain(domain string) *Domain {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
+	// First, try exact match
 	for i := range cm.config.Domains {
 		if cm.config.Domains[i].Domain == domain {
 			return &cm.config.Domains[i]
 		}
 	}
+
+	// If no exact match, check for CNAME records that might resolve this domain
+	// For example, if requesting "dev.defenra.cc", check if any domain has a CNAME record for "dev"
+	parts := strings.Split(domain, ".")
+	if len(parts) >= 2 {
+		subdomain := parts[0]
+		parentDomain := strings.Join(parts[1:], ".")
+		
+		// Look for parent domain with CNAME record for this subdomain
+		for i := range cm.config.Domains {
+			if cm.config.Domains[i].Domain == parentDomain {
+				// Check if this domain has a CNAME record for the subdomain
+				for _, record := range cm.config.Domains[i].DNSRecords {
+					if record.Type == "CNAME" && record.Name == subdomain {
+						log.Printf("[Config] Found CNAME record: %s.%s -> %s", subdomain, parentDomain, record.Value)
+						// Return the parent domain configuration for CNAME resolution
+						return &cm.config.Domains[i]
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

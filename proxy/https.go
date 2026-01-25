@@ -143,7 +143,11 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	domainConfig := s.configMgr.GetDomain(host)
 	if domainConfig == nil {
 		log.Printf("[HTTPS] Domain not found: %s", host)
-		http.Error(w, "Domain not found", http.StatusNotFound)
+		
+		// Use beautiful error page instead of generic error
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 404, "Домен не найден. Данный домен не настроен на этом агенте.")
+		s.sendChallengeResponse(w, response)
 		return
 	}
 
@@ -518,6 +522,44 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host string) string {
+	// Check if this is a CNAME resolution case
+	parts := strings.Split(host, ".")
+	if len(parts) >= 2 {
+		subdomain := parts[0]
+		parentDomain := strings.Join(parts[1:], ".")
+		
+		// If the domain config is for the parent domain, look for CNAME record
+		if domainConfig.Domain == parentDomain {
+			for _, record := range domainConfig.DNSRecords {
+				if record.Type == "CNAME" && record.Name == subdomain {
+					log.Printf("[HTTPS] Resolving CNAME: %s -> %s", host, record.Value)
+					// CNAME record found, use its value as target
+					// The value could be another domain name or IP
+					// For now, we'll treat it as the target to proxy to
+					
+					// If CNAME value looks like a domain, we need to resolve it
+					// For simplicity, let's check if it's an IP or domain
+					if net.ParseIP(record.Value) != nil {
+						// It's an IP address
+						return record.Value
+					} else {
+						// It's a domain name, we should resolve it
+						// For now, let's look for A records in the same domain that match
+						for _, aRecord := range domainConfig.DNSRecords {
+							if aRecord.Type == "A" && (aRecord.Name == record.Value || aRecord.Name == "@") {
+								return aRecord.Value
+							}
+						}
+						// If no A record found, return the CNAME value as-is
+						// The HTTP client will resolve it
+						return record.Value
+					}
+				}
+			}
+		}
+	}
+
+	// Original logic for direct domain matches
 	for _, record := range domainConfig.DNSRecords {
 		if record.HTTPProxyEnabled {
 			if record.Type == "A" || record.Type == "AAAA" {
