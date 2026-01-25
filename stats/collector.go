@@ -116,14 +116,20 @@ func (sc *StatisticsCollector) SendStatistics() {
 
 	sc.mu.Unlock()
 
+	log.Printf("[Stats] Starting statistics collection and send process")
+
 	// получаем актуальную статистику из proxy модулей
 	httpStats := proxy.GetHTTPStats()
 	httpsStats := proxy.GetHTTPSStats()
 	firewallStats := firewall.GetStats()
 
+	log.Printf("[Stats] Proxy stats collected: HTTP requests=%d, HTTPS requests=%d, L4 blocks=%d", 
+		httpStats.TotalRequests, httpsStats.TotalRequests, firewallStats.L4Blocks)
+
 	// собираем системные метрики - ВСЕГДА должны быть доступны
 	var systemMetrics *SystemMetrics
 	if sc.systemCollector != nil {
+		log.Printf("[Stats] System collector is available, collecting metrics...")
 		if metrics, err := sc.systemCollector.CollectMetrics(); err != nil {
 			log.Printf("[Stats] Failed to collect system metrics: %v", err)
 			// Создаем базовые метрики даже при ошибке
@@ -137,7 +143,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 				systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent, systemMetrics.NumGoroutines)
 		} else {
 			systemMetrics = metrics
-			log.Printf("[Stats] System metrics collected: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
+			log.Printf("[Stats] System metrics collected successfully: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
 				metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
 		}
 	} else {
@@ -158,9 +164,10 @@ func (sc *StatisticsCollector) SendStatistics() {
 	sc.sendProxyStatistics()
 
 	if systemMetrics != nil {
-		log.Printf("[Stats] Statistics sent to Core with system metrics")
+		log.Printf("[Stats] Statistics sent to Core with system metrics (CPU=%.1f%%, Memory=%.1f%%)",
+			systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent)
 	} else {
-		log.Printf("[Stats] Statistics sent to Core without system metrics")
+		log.Printf("[Stats] Statistics sent to Core without system metrics - THIS SHOULD NOT HAPPEN!")
 	}
 }
 
