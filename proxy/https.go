@@ -249,6 +249,15 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				}
 			}
 		}
+
+		// If we reach here, all challenges have been passed successfully
+		// Create a session to avoid repeating challenges
+		if suspicionLevel > 0 {
+			challengeMgr := firewall.GetChallengeManager()
+			sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
+			sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
+			http.SetCookie(w, sessionCookie)
+		}
 	}
 
 	// проверка whitelist и rate limiting
