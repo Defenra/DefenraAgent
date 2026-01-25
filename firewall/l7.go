@@ -100,6 +100,75 @@ var botFingerprints = map[string]string{
 	"0x1303,0x1301,0xc02c,0xc030,0xc02b,0xc02f,0xcca9,0xcca8,0x9f,0x9e,0xccaa,0xc0af,0xc0ad,0xc0ae,0xc0ac,0xc024,0xc028,0xc023,0xc027,0xc00a,0xc014,0xc009,0xc013,0xc0a3,0xc09f,0xc0a2,0xc09e,0x6b,0x67,0x39,0x33,0x9d,0x9c,0xc0a1,0xc09d,0xc0a0,0xc09c,0x3d,0x3c,0x35,0x2f,0xff,0x437572766550323536,0x4375727665494428333029,0x437572766550353231,0x437572766550333834,0x0,": "Python-Requests",
 }
 
+// Suspicious User-Agent patterns
+var suspiciousUserAgents = []string{
+	// Scanners and vulnerability tools
+	"nmap", "masscan", "zmap", "sqlmap", "nikto", "dirb", "dirbuster", "gobuster", "wfuzz", "ffuf",
+	"burp", "owasp", "w3af", "acunetix", "nessus", "openvas", "nuclei", "httpx", "subfinder",
+	
+	// Automated tools and bots (non-search engines)
+	"curl", "wget", "python-requests", "python-urllib", "go-http-client", "java/", "apache-httpclient",
+	"okhttp", "node-fetch", "axios", "postman", "insomnia", "httpie", "scrapy", "beautifulsoup",
+	
+	// Suspicious patterns
+	"bot", "crawler", "spider", "scraper", "scanner", "test", "monitor", "check", "probe",
+	"exploit", "hack", "attack", "inject", "payload", "shell", "backdoor",
+	
+	// Empty or minimal user agents (check these separately)
+	"-", "x", "a", "user-agent",
+	
+	// Known malicious tools
+	"metasploit", "cobalt", "empire", "powershell", "cmd", "bash", "sh",
+}
+
+// Search engine bots (allowed)
+var allowedBots = []string{
+	"googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandexbot", "facebookexternalhit",
+	"twitterbot", "linkedinbot", "whatsapp", "telegram", "discord", "slack", "applebot",
+}
+
+// AnalyzeUserAgent analyzes User-Agent header for suspicious patterns
+func AnalyzeUserAgent(userAgent string) (int, string) {
+	if userAgent == "" {
+		return 2, "Empty User-Agent"
+	}
+	
+	userAgentLower := strings.ToLower(userAgent)
+	
+	// Check if it's an allowed search engine bot first
+	for _, allowedBot := range allowedBots {
+		if strings.Contains(userAgentLower, allowedBot) {
+			return 0, fmt.Sprintf("Allowed bot: %s", allowedBot)
+		}
+	}
+	
+	// Check for common browser indicators first (to avoid false positives)
+	hasCommonBrowser := strings.Contains(userAgentLower, "mozilla") ||
+		strings.Contains(userAgentLower, "chrome") ||
+		strings.Contains(userAgentLower, "firefox") ||
+		strings.Contains(userAgentLower, "safari") ||
+		strings.Contains(userAgentLower, "edge")
+	
+	if hasCommonBrowser {
+		return 0, "Normal User-Agent" // Normal browser, don't check suspicious patterns
+	}
+	
+	// Check for suspicious patterns only for non-browser user agents
+	for _, suspicious := range suspiciousUserAgents {
+		if suspicious != "" && strings.Contains(userAgentLower, suspicious) {
+			return 3, fmt.Sprintf("Suspicious User-Agent: %s", suspicious)
+		}
+	}
+	
+	// Check for very short user agents (likely automated)
+	if len(userAgent) < 10 {
+		return 2, "Suspiciously short User-Agent"
+	}
+	
+	// Non-browser but not explicitly suspicious
+	return 1, "Non-browser User-Agent"
+}
+
 // Malicious fingerprints (from balooProxyX)
 var maliciousFingerprints = map[string]string{
 	"0x1303,0x1302,0xc02f,0xc02b,0xc030,0xc02c,0x9e,0xc027,0x67,0xc028,0x6b,0x9f,0xcca9,0xcca8,0xccaa,0xc0af,0xc0ad,0xc0a3,0xc09f,0xc05d,0xc061,0xc053,0xc0ae,0xc0ac,0xc0a2,0xc09e,0xc05c,0xc060,0xc052,0xc024,0xc023,0xc00a,0xc014,0x39,0xc009,0xc013,0x33,0x9d,0xc0a1,0xc09d,0xc051,0x9c,0xc0a0,0xc09c,0xc050,0x3d,0x3c,0x35,0x2f,0xff,0x437572766550323536,0x4375727665494428333029,0x437572766550353231,0x437572766550333834,0x437572766549442832353629,0x437572766549442832353729,0x437572766549442832353829,0x437572766549442832353929,0x437572766549442832363029,0x0,": "Http-Flood",
@@ -225,6 +294,22 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 		}
 
 		connInfo.Fingerprint = tlsFingerprint
+	}
+
+	// Analyze User-Agent header for additional suspicion
+	userAgent := r.Header.Get("User-Agent")
+	uaSuspicion, uaReason := AnalyzeUserAgent(userAgent)
+	
+	// Combine TLS fingerprint and User-Agent suspicion levels
+	if uaSuspicion > suspicionLevel {
+		suspicionLevel = uaSuspicion
+		browserType = uaReason
+	} else if uaSuspicion > 0 && suspicionLevel > 0 {
+		// Both TLS and UA are suspicious - increase suspicion
+		suspicionLevel = suspicionLevel + 1
+		if suspicionLevel > 4 {
+			suspicionLevel = 4 // Cap at maximum
+		}
 	}
 
 	return suspicionLevel, browserType, nil

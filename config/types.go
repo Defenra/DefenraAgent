@@ -137,6 +137,7 @@ type PollRequest struct {
 
 type PollResponse struct {
 	Success bool     `json:"success"`
+	GeoCode string   `json:"geoCode,omitempty"` // Agent's country code for D-Agent-ID header
 	Domains []Domain `json:"domains"`
 	Proxies []Proxy  `json:"proxies"`
 }
