@@ -195,6 +195,24 @@ func TestChallengeManager(t *testing.T) {
 			t.Error("Expected JS challenge to fail without solution")
 		}
 
+		// Test GET request with PoW parameters in URL
+		getReqWithPoW, _ := http.NewRequest("GET", "/test?defenra_pow_nonce=12345&defenra_pow_salt=test", nil)
+		
+		// Should fail with wrong nonce
+		if cm.ValidateJSChallenge(getReqWithPoW, 4) {
+			t.Error("Expected JS challenge to fail with wrong nonce in GET request")
+		}
+
+		// Test POST request with PoW parameters
+		postData := "defenra_pow_nonce=12345&defenra_pow_salt=test"
+		postReq, _ := http.NewRequest("POST", "/test", strings.NewReader(postData))
+		postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		
+		// Should also fail with wrong nonce
+		if cm.ValidateJSChallenge(postReq, 4) {
+			t.Error("Expected JS challenge to fail with wrong nonce in POST request")
+		}
+
 		// Issue challenge
 		response := cm.IssueJSChallenge(nil, req, "192.168.1.201", 4)
 		if !response.Blocked {

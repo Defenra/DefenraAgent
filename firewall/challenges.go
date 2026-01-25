@@ -249,12 +249,19 @@ func (cm *ChallengeManager) IssueJSChallenge(w http.ResponseWriter, r *http.Requ
 }
 
 func (cm *ChallengeManager) ValidateJSChallenge(r *http.Request, difficulty int) bool {
-	if r.Method != "POST" {
+	var nonce, salt string
+
+	// Check both POST form data and GET URL parameters
+	if r.Method == "POST" {
+		nonce = r.FormValue("defenra_pow_nonce")
+		salt = r.FormValue("defenra_pow_salt")
+	} else if r.Method == "GET" {
+		// Check URL parameters for GET requests
+		nonce = r.URL.Query().Get("defenra_pow_nonce")
+		salt = r.URL.Query().Get("defenra_pow_salt")
+	} else {
 		return false
 	}
-
-	nonce := r.FormValue("defenra_pow_nonce")
-	salt := r.FormValue("defenra_pow_salt")
 
 	if nonce == "" || salt == "" {
 		return false
