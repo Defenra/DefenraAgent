@@ -67,12 +67,29 @@ func StartHTTPProxy(configMgr *config.ConfigManager) {
 func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&s.stats.TotalRequests, 1)
 
+	clientIP := getClientIP(r)
+	
+	// Connection-level protection - check before any processing
+	connLimiter := firewall.GetConnectionLimiter()
+	if !connLimiter.CheckConnection(r.RemoteAddr) {
+		log.Printf("[HTTP] Connection blocked at connection level for %s", clientIP)
+		atomic.AddUint64(&s.stats.BlockedRequests, 1)
+		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
+
+		// Use beautiful error page for connection limit exceeded
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, "Слишком много подключений. Превышен лимит подключений с вашего IP-адреса.")
+		s.sendChallengeResponse(w, response)
+		return
+	}
+	// Release connection when request is done
+	defer connLimiter.ReleaseConnection(r.RemoteAddr)
+
 	host := r.Host
 	if idx := strings.Index(host, ":"); idx != -1 {
 		host = host[:idx]
 	}
 
-	clientIP := getClientIP(r)
 	log.Printf("[HTTP] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
 
 	// проверка iptables банов
@@ -112,7 +129,7 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 			IPRateLimit:            domainConfig.HTTPProxy.AntiDDoS.L7Protection.IPRateLimit,
 			FailChallengeRateLimit: domainConfig.HTTPProxy.AntiDDoS.L7Protection.FailChallengeRateLimit,
 			SuspiciousThreshold:    domainConfig.HTTPProxy.AntiDDoS.L7Protection.SuspiciousThreshold,
-			RateWindow:             10 * time.Second,
+			RateWindow:             5 * time.Second, // Reduced from 10 seconds
 			KnownFingerprints:      firewall.GetKnownFingerprints(),
 			BotFingerprints:        firewall.GetBotFingerprints(),
 			BlockedFingerprints:    make(map[string]string),

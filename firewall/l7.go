@@ -131,19 +131,24 @@ var allowedBots = []string{
 // AnalyzeUserAgent analyzes User-Agent header for suspicious patterns
 func AnalyzeUserAgent(userAgent string) (int, string) {
 	if userAgent == "" {
-		return 2, "Empty User-Agent"
+		return 4, "Empty User-Agent - BLOCKED" // Immediately block empty UA
 	}
 
 	userAgentLower := strings.ToLower(userAgent)
 
-	// Check if it's an allowed search engine bot first
+	// Check if it's an allowed search engine bot first (highest priority)
 	for _, allowedBot := range allowedBots {
 		if strings.Contains(userAgentLower, allowedBot) {
 			return 0, fmt.Sprintf("Allowed bot: %s", allowedBot)
 		}
 	}
 
-	// Check for common browser indicators first (to avoid false positives)
+	// Check for very short user agents (likely automated) - before browser check
+	if len(userAgent) < 10 {
+		return 4, "Suspiciously short User-Agent - BLOCKED" // Immediately block
+	}
+
+	// Check for common browser indicators
 	hasCommonBrowser := strings.Contains(userAgentLower, "mozilla") ||
 		strings.Contains(userAgentLower, "chrome") ||
 		strings.Contains(userAgentLower, "firefox") ||
@@ -151,23 +156,25 @@ func AnalyzeUserAgent(userAgent string) (int, string) {
 		strings.Contains(userAgentLower, "edge")
 
 	if hasCommonBrowser {
-		return 0, "Normal User-Agent" // Normal browser, don't check suspicious patterns
+		// Even for browsers, check for suspicious patterns that might indicate spoofing
+		// But be more careful - only block if it's clearly malicious
+		for _, suspicious := range []string{"curl", "wget", "python-requests", "go-http-client", "java/", "apache-httpclient"} {
+			if suspicious != "" && strings.Contains(userAgentLower, suspicious) {
+				return 4, fmt.Sprintf("Suspicious browser User-Agent: %s - BLOCKED", suspicious)
+			}
+		}
+		return 0, "Normal User-Agent" // Normal browser
 	}
 
-	// Check for suspicious patterns only for non-browser user agents
+	// Check for suspicious patterns for non-browser user agents
 	for _, suspicious := range suspiciousUserAgents {
 		if suspicious != "" && strings.Contains(userAgentLower, suspicious) {
-			return 3, fmt.Sprintf("Suspicious User-Agent: %s", suspicious)
+			return 4, fmt.Sprintf("Suspicious User-Agent: %s - BLOCKED", suspicious) // Immediately block
 		}
 	}
 
-	// Check for very short user agents (likely automated)
-	if len(userAgent) < 10 {
-		return 2, "Suspiciously short User-Agent"
-	}
-
-	// Non-browser but not explicitly suspicious
-	return 1, "Non-browser User-Agent"
+	// Non-browser but not explicitly suspicious - still suspicious
+	return 2, "Non-browser User-Agent"
 }
 
 // Malicious fingerprints (from balooProxyX)
@@ -178,11 +185,11 @@ var maliciousFingerprints = map[string]string{
 func NewL7Protection(config *L7Config) *L7Protection {
 	if config == nil {
 		config = &L7Config{
-			FingerprintRateLimit:   50,
-			IPRateLimit:            100,
-			FailChallengeRateLimit: 10,
+			FingerprintRateLimit:   20,  // Reduced from 50
+			IPRateLimit:            30,  // Reduced from 100
+			FailChallengeRateLimit: 5,   // Reduced from 10
 			SuspiciousThreshold:    1,
-			RateWindow:             10 * time.Second,
+			RateWindow:             5 * time.Second, // Reduced from 10 seconds
 			KnownFingerprints:      knownFingerprints,
 			BotFingerprints:        botFingerprints,
 			BlockedFingerprints:    maliciousFingerprints,
@@ -219,6 +226,15 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 		}
 	} else {
 		log.Printf("[L7] No session cookie found for IP %s, error: %v", clientIP, err)
+	}
+
+	// Analyze User-Agent header FIRST - before any rate limiting
+	userAgent := r.Header.Get("User-Agent")
+	uaSuspicion, uaReason := AnalyzeUserAgent(userAgent)
+	
+	// If User-Agent is immediately suspicious (level 4), block right away
+	if uaSuspicion >= 4 {
+		return uaSuspicion, uaReason, nil
 	}
 
 	l7.mu.Lock()
@@ -314,13 +330,13 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 		connInfo.Fingerprint = tlsFingerprint
 	}
 
-	// Analyze User-Agent header for additional suspicion
-	userAgent := r.Header.Get("User-Agent")
-	uaSuspicion, uaReason := AnalyzeUserAgent(userAgent)
-
 	// Combine TLS fingerprint and User-Agent suspicion levels
 	if uaSuspicion > suspicionLevel {
 		suspicionLevel = uaSuspicion
+		browserType = uaReason
+	} else if uaSuspicion == 0 && suspicionLevel == l7.config.SuspiciousThreshold {
+		// User-Agent is explicitly allowed (like search bots), override default suspicion
+		suspicionLevel = 0
 		browserType = uaReason
 	} else if uaSuspicion > 0 && suspicionLevel > 0 {
 		// Both TLS and UA are suspicious - increase suspicion
