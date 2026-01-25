@@ -17,6 +17,7 @@ type ConfigManager struct {
 	coreURL  string
 	agentID  string
 	agentKey string
+	geoCode  string // Agent's geo code (country code)
 	config   *Config
 	mu       sync.RWMutex
 	client   *http.Client
@@ -223,6 +224,11 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 	cm.config.Proxies = resp.Proxies
 	cm.config.LastUpdate = time.Now()
 
+	// Save agent's geo code for D-Agent-ID header
+	if resp.GeoCode != "" {
+		cm.geoCode = resp.GeoCode
+	}
+
 	cm.stats.mu.Lock()
 	cm.stats.DomainsLoaded = len(resp.Domains)
 	cm.stats.ProxiesActive = len(resp.Proxies)
@@ -324,4 +330,21 @@ func (cm *ConfigManager) GetConfig() *Config {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.config
+}
+
+func (cm *ConfigManager) GetAgentID() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.agentID
+}
+
+func (cm *ConfigManager) GetGeoCode() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	
+	if cm.geoCode != "" {
+		return cm.geoCode
+	}
+	
+	return "XX" // Default if geo code not set
 }

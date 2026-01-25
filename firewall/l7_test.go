@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,6 +25,7 @@ func TestL7Protection(t *testing.T) {
 
 	t.Run("known browser fingerprint", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		clientIP := "192.168.1.100"
 		// Use a known Chrome fingerprint
 		tlsFingerprint := "0x1301,0x1302,0x1303,0xc02b,0xc02f,0xc02c,0xc030,0xcca9,0xcca8,0xc013,0xc014,0x9c,0x9d,0x2f,0x35,0x583235353139,0x437572766550323536,0x437572766550333834,0x0,"
@@ -44,6 +46,7 @@ func TestL7Protection(t *testing.T) {
 
 	t.Run("unknown fingerprint", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		clientIP := "192.168.1.101"
 		tlsFingerprint := "unknown_fingerprint_12345"
 
@@ -63,6 +66,7 @@ func TestL7Protection(t *testing.T) {
 
 	t.Run("blocked fingerprint", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		clientIP := "192.168.1.102"
 		// Use a malicious fingerprint
 		tlsFingerprint := "0x1303,0x1302,0xc02f,0xc02b,0xc030,0xc02c,0x9e,0xc027,0x67,0xc028,0x6b,0x9f,0xcca9,0xcca8,0xccaa,0xc0af,0xc0ad,0xc0a3,0xc09f,0xc05d,0xc061,0xc053,0xc0ae,0xc0ac,0xc0a2,0xc09e,0xc05c,0xc060,0xc052,0xc024,0xc023,0xc00a,0xc014,0x39,0xc009,0xc013,0x33,0x9d,0xc0a1,0xc09d,0xc051,0x9c,0xc0a0,0xc09c,0xc050,0x3d,0x3c,0x35,0x2f,0xff,0x437572766550323536,0x4375727665494428333029,0x437572766550353231,0x437572766550333834,0x437572766549442832353629,0x437572766549442832353729,0x437572766549442832353829,0x437572766549442832353929,0x437572766549442832363029,0x0,"
@@ -120,6 +124,26 @@ func TestL7Protection(t *testing.T) {
 
 		if suspicion != -1 {
 			t.Errorf("Expected request to be blocked due to challenge failures, got suspicion %d", suspicion)
+		}
+	})
+
+	t.Run("suspicious user agent", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/", nil)
+		req.Header.Set("User-Agent", "curl/7.68.0") // Suspicious User-Agent
+		clientIP := "192.168.1.105"
+		tlsFingerprint := "" // No TLS fingerprint
+
+		suspicion, browserType, err := l7.AnalyzeRequest(req, clientIP, tlsFingerprint)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if suspicion < 3 {
+			t.Errorf("Expected high suspicion level for curl user agent, got %d", suspicion)
+		}
+
+		if !strings.Contains(strings.ToLower(browserType), "curl") {
+			t.Errorf("Expected browser type to contain 'curl', got '%s'", browserType)
 		}
 	})
 }

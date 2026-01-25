@@ -423,6 +423,15 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	proxyReq.Header.Set("X-Forwarded-Proto", "http")
 	proxyReq.Header.Set("X-Real-IP", clientIP)
 
+	// Add unique agent identifier header
+	if s.configMgr != nil {
+		agentID := s.configMgr.GetAgentID()
+		geoCode := s.configMgr.GetGeoCode()
+		if agentID != "" && geoCode != "" {
+			proxyReq.Header.Set("D-Agent-ID", geoCode+"+"+agentID[:8]) // Use first 8 chars of agent ID
+		}
+	}
+
 	// Preserve original Host header from client (important for virtual hosting on origin)
 	// Go's http.NewRequest sets Host from URL, but we want the original domain
 	proxyReq.Host = r.Host
