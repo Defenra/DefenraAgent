@@ -105,6 +105,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 	sc.mu.Lock()
 
 	if sc.coreURL == "" || sc.agentID == "" || sc.agentKey == "" {
+		log.Println("[Stats] Configuration not set, skipping statistics send")
 		sc.mu.Unlock()
 		return
 	}
@@ -126,7 +127,11 @@ func (sc *StatisticsCollector) SendStatistics() {
 			log.Printf("[Stats] Failed to collect system metrics: %v", err)
 		} else {
 			systemMetrics = metrics
+			log.Printf("[Stats] System metrics collected: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d", 
+				metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
 		}
+	} else {
+		log.Println("[Stats] System metrics collector not initialized")
 	}
 
 	// отправляем статистику по доменам (HTTP/HTTPS трафик) с системными метриками

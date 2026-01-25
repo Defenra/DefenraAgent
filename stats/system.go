@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -117,6 +118,7 @@ func (smc *SystemMetricsCollector) collectMemoryMetrics(metrics *SystemMetrics) 
 				metrics.MemoryUsagePercent = float64(used) / float64(total) * 100
 			}
 		} else {
+			log.Printf("[Stats] Failed to get Linux memory info, using runtime stats: %v", err)
 			// Fallback to runtime stats
 			metrics.MemoryTotalBytes = m.Sys
 			if m.Sys > 0 {
@@ -125,6 +127,7 @@ func (smc *SystemMetricsCollector) collectMemoryMetrics(metrics *SystemMetrics) 
 		}
 	} else {
 		// For non-Linux systems, use runtime stats
+		log.Printf("[Stats] Using runtime memory stats for %s", runtime.GOOS)
 		metrics.MemoryTotalBytes = m.Sys
 		if m.Sys > 0 {
 			metrics.MemoryUsagePercent = float64(m.Alloc) / float64(m.Sys) * 100
@@ -138,12 +141,14 @@ func (smc *SystemMetricsCollector) collectCPUMetrics(metrics *SystemMetrics, now
 	if runtime.GOOS != "linux" {
 		// For non-Linux systems, we can't easily get CPU usage
 		// Set to 0 to indicate unavailable
+		log.Printf("[Stats] CPU metrics not available on %s", runtime.GOOS)
 		metrics.CPUUsagePercent = 0
 		return nil
 	}
 
 	currentStats, err := getLinuxCPUStats()
 	if err != nil {
+		log.Printf("[Stats] Failed to get CPU stats: %v", err)
 		return err
 	}
 

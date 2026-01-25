@@ -88,20 +88,32 @@ func main() {
 	statsCollector := stats.GetCollector()
 	statsCollector.SetConfig(coreURL, agentID, agentKey)
 
-	// запускаем отправку статистики каждые 5 минут
+	// запускаем отправку статистики каждые 2 минуты (более частая отправка)
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
+		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
+		
+		// Отправляем статистику сразу при запуске
+		log.Println("[Stats] Sending initial statistics...")
+		statsCollector.SendStatistics()
+		
 		for range ticker.C {
+			log.Println("[Stats] Sending periodic statistics...")
 			statsCollector.SendStatistics()
 		}
 	}()
 
-	// запускаем отправку данных о клиентах каждые 2 минуты
+	// запускаем отправку данных о клиентах каждые 1 минуту (более частая отправка)
 	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
+		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
+		
+		// Отправляем данные о клиентах сразу при запуске
+		log.Println("[Stats] Sending initial client data...")
+		statsCollector.SendClientData()
+		
 		for range ticker.C {
+			log.Println("[Stats] Sending periodic client data...")
 			statsCollector.SendClientData()
 		}
 	}()
