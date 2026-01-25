@@ -3,6 +3,7 @@ package firewall
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"sync"
 	"time"
 )
@@ -65,12 +66,14 @@ func (sm *SessionManager) CreateSession(clientIP, userAgent, host string) string
 	sm.sessions[sessionID] = session
 	sm.mu.Unlock()
 
+	log.Printf("[Session] Created session %s for IP %s, Host %s", sessionID, clientIP, host)
 	return sessionID
 }
 
 // IsSessionValid checks if a session is valid and not expired
 func (sm *SessionManager) IsSessionValid(sessionID, clientIP, userAgent, host string) bool {
 	if sessionID == "" {
+		log.Printf("[Session] Empty session ID provided")
 		return false
 	}
 
@@ -79,11 +82,13 @@ func (sm *SessionManager) IsSessionValid(sessionID, clientIP, userAgent, host st
 	sm.mu.RUnlock()
 
 	if !exists {
+		log.Printf("[Session] Session %s not found in session store", sessionID)
 		return false
 	}
 
 	// Check if session is expired
 	if time.Now().After(session.ExpiresAt) {
+		log.Printf("[Session] Session %s expired at %v", sessionID, session.ExpiresAt)
 		sm.mu.Lock()
 		delete(sm.sessions, sessionID)
 		sm.mu.Unlock()
@@ -91,10 +96,22 @@ func (sm *SessionManager) IsSessionValid(sessionID, clientIP, userAgent, host st
 	}
 
 	// Verify session matches client details
-	if session.ClientIP != clientIP || session.UserAgent != userAgent || session.Host != host {
+	if session.ClientIP != clientIP {
+		log.Printf("[Session] Session %s IP mismatch: stored %s vs provided %s", sessionID, session.ClientIP, clientIP)
+		return false
+	}
+	
+	if session.UserAgent != userAgent {
+		log.Printf("[Session] Session %s User-Agent mismatch: stored %s vs provided %s", sessionID, session.UserAgent, userAgent)
+		return false
+	}
+	
+	if session.Host != host {
+		log.Printf("[Session] Session %s Host mismatch: stored %s vs provided %s", sessionID, session.Host, host)
 		return false
 	}
 
+	log.Printf("[Session] Session %s is valid for IP %s", sessionID, clientIP)
 	return session.Verified
 }
 
