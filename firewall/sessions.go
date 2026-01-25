@@ -100,12 +100,12 @@ func (sm *SessionManager) IsSessionValid(sessionID, clientIP, userAgent, host st
 		log.Printf("[Session] Session %s IP mismatch: stored %s vs provided %s", sessionID, session.ClientIP, clientIP)
 		return false
 	}
-	
+
 	if session.UserAgent != userAgent {
 		log.Printf("[Session] Session %s User-Agent mismatch: stored %s vs provided %s", sessionID, session.UserAgent, userAgent)
 		return false
 	}
-	
+
 	if session.Host != host {
 		log.Printf("[Session] Session %s Host mismatch: stored %s vs provided %s", sessionID, session.Host, host)
 		return false
