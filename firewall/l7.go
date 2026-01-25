@@ -203,6 +203,17 @@ func NewL7Protection(config *L7Config) *L7Protection {
 }
 
 func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFingerprint string) (int, string, error) {
+	// Check if user has a valid session first
+	sessionManager := GetSessionManager()
+	sessionCookie, err := r.Cookie("__defenra_session")
+	if err == nil && sessionCookie != nil {
+		if sessionManager.IsSessionValid(sessionCookie.Value, clientIP, r.UserAgent(), r.Host) {
+			// Valid session - extend it and allow request
+			sessionManager.ExtendSession(sessionCookie.Value)
+			return 0, "session_valid", nil
+		}
+	}
+
 	l7.mu.Lock()
 	defer l7.mu.Unlock()
 

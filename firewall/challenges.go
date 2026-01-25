@@ -400,21 +400,36 @@ func (cm *ChallengeManager) generateCaptcha(captchaID string) *CaptchaData {
 	// Generate random text (numbers and letters for better readability)
 	answer := generateCaptchaText(5)
 
-	// Create CAPTCHA image with better visibility
-	img := image.NewRGBA(image.Rect(0, 0, 200, 80))
+	// Create larger CAPTCHA image with better visibility
+	img := image.NewRGBA(image.Rect(0, 0, 300, 120))
 
 	// Fill background with dark theme
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{24, 24, 27, 255}}, image.Point{}, draw.Src)
 
-	// Draw text manually (simple pixel-based implementation)
+	// Add noise and distortion to prevent OCR
+	addNoise(img)
+
+	// Draw text manually with larger size and distortion
 	textColor := color.RGBA{228, 228, 231, 255} // Light gray text
 
-	// Draw each character using simple pixel patterns
+	// Draw each character with random positioning and rotation
 	for i, char := range answer {
-		x := 25 + i*30
-		y := 25
-		drawSimpleChar(img, char, x, y, textColor)
+		baseX := 40 + i*45
+		baseY := 40
+
+		// Add random offset for distortion
+		offsetX := (i*17+int(char))%15 - 7 // Random offset -7 to +7
+		offsetY := (i*23+int(char))%10 - 5 // Random offset -5 to +5
+
+		x := baseX + offsetX
+		y := baseY + offsetY
+
+		// Draw character with larger scale
+		drawLargeChar(img, char, x, y, textColor)
 	}
+
+	// Add more distortion lines
+	addDistortionLines(img)
 
 	// Convert to base64
 	var buf bytes.Buffer
@@ -1555,5 +1570,431 @@ func drawSimpleChar(img *image.RGBA, char rune, x, y int, c color.RGBA) {
 				img.Set(x+dx, y+dy, c)
 			}
 		}
+	}
+}
+
+// Add noise to CAPTCHA image to prevent OCR
+func addNoise(img *image.RGBA) {
+	bounds := img.Bounds()
+	noiseColor := color.RGBA{60, 60, 67, 255} // Slightly lighter than background
+
+	// Add random noise pixels
+	for i := 0; i < 200; i++ {
+		x := (i*37 + 123) % bounds.Max.X
+		y := (i*41 + 456) % bounds.Max.Y
+		img.Set(x, y, noiseColor)
+	}
+}
+
+// Add distortion lines to make OCR harder
+func addDistortionLines(img *image.RGBA) {
+	bounds := img.Bounds()
+	lineColor := color.RGBA{100, 100, 107, 255} // Medium gray
+
+	// Add some diagonal lines
+	for i := 0; i < 3; i++ {
+		startX := (i * 47) % bounds.Max.X
+		startY := (i * 31) % bounds.Max.Y
+		endX := ((i + 1) * 73) % bounds.Max.X
+		endY := ((i + 1) * 59) % bounds.Max.Y
+
+		drawLine(img, startX, startY, endX, endY, lineColor)
+	}
+}
+
+// Draw a line between two points
+func drawLine(img *image.RGBA, x1, y1, x2, y2 int, c color.RGBA) {
+	dx := abs(x2 - x1)
+	dy := abs(y2 - y1)
+	sx := 1
+	sy := 1
+
+	if x1 > x2 {
+		sx = -1
+	}
+	if y1 > y2 {
+		sy = -1
+	}
+
+	err := dx - dy
+	x, y := x1, y1
+
+	for {
+		if x >= 0 && y >= 0 && x < img.Bounds().Max.X && y < img.Bounds().Max.Y {
+			img.Set(x, y, c)
+		}
+
+		if x == x2 && y == y2 {
+			break
+		}
+
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x += sx
+		}
+		if e2 < dx {
+			err += dx
+			y += sy
+		}
+	}
+}
+
+// Draw larger characters for better visibility
+func drawLargeChar(img *image.RGBA, char rune, x, y int, c color.RGBA) {
+	// Use the existing patterns but scale them up 2x
+	patterns := getLargeCharPatterns()
+
+	pattern, exists := patterns[char]
+	if !exists {
+		// Draw a larger rectangle for unknown characters
+		for dy := 0; dy < 14; dy++ {
+			for dx := 0; dx < 10; dx++ {
+				if dy < 2 || dy > 11 || dx < 2 || dx > 7 {
+					if x+dx >= 0 && y+dy >= 0 && x+dx < img.Bounds().Max.X && y+dy < img.Bounds().Max.Y {
+						img.Set(x+dx, y+dy, c)
+					}
+				}
+			}
+		}
+		return
+	}
+
+	// Draw the character pattern scaled 2x
+	for dy, row := range pattern {
+		for dx, pixel := range row {
+			if pixel == '#' {
+				// Draw 2x2 pixel block for each pattern pixel
+				for py := 0; py < 2; py++ {
+					for px := 0; px < 2; px++ {
+						nx, ny := x+dx*2+px, y+dy*2+py
+						if nx >= 0 && ny >= 0 && nx < img.Bounds().Max.X && ny < img.Bounds().Max.Y {
+							img.Set(nx, ny, c)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// Get larger character patterns (same as before but will be scaled)
+func getLargeCharPatterns() map[rune][]string {
+	return map[rune][]string{
+		'A': {
+			" ### ",
+			"#   #",
+			"#   #",
+			"#####",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'B': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"#### ",
+			"#   #",
+			"#### ",
+			"     ",
+		},
+		'C': {
+			" ####",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			" ####",
+			"     ",
+		},
+		'D': {
+			"#### ",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#### ",
+			"     ",
+		},
+		'E': {
+			"#####",
+			"#    ",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'F': {
+			"#####",
+			"#    ",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"     ",
+		},
+		'G': {
+			" ####",
+			"#    ",
+			"# ###",
+			"#   #",
+			"#   #",
+			" ####",
+			"     ",
+		},
+		'H': {
+			"#   #",
+			"#   #",
+			"#####",
+			"#   #",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'J': {
+			"  ###",
+			"    #",
+			"    #",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'K': {
+			"#   #",
+			"#  # ",
+			"# #  ",
+			"##   ",
+			"# #  ",
+			"#  ##",
+			"     ",
+		},
+		'L': {
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'M': {
+			"#   #",
+			"## ##",
+			"# # #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'N': {
+			"#   #",
+			"##  #",
+			"# # #",
+			"#  ##",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'P': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"     ",
+		},
+		'Q': {
+			" ### ",
+			"#   #",
+			"#   #",
+			"# # #",
+			"#  ##",
+			" ####",
+			"     ",
+		},
+		'R': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"# #  ",
+			"#  # ",
+			"#   #",
+			"     ",
+		},
+		'S': {
+			" ####",
+			"#    ",
+			" ### ",
+			"    #",
+			"    #",
+			"#### ",
+			"     ",
+		},
+		'T': {
+			"#####",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"     ",
+		},
+		'U': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'V': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			" # # ",
+			"  #  ",
+			"     ",
+		},
+		'W': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"# # #",
+			"## ##",
+			"#   #",
+			"     ",
+		},
+		'X': {
+			"#   #",
+			" # # ",
+			"  #  ",
+			"  #  ",
+			" # # ",
+			"#   #",
+			"     ",
+		},
+		'Y': {
+			"#   #",
+			" # # ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"     ",
+		},
+		'Z': {
+			"#####",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'2': {
+			" ### ",
+			"#   #",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#####",
+			"     ",
+		},
+		'3': {
+			" ### ",
+			"#   #",
+			"  ## ",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'4': {
+			"   # ",
+			"  ## ",
+			" # # ",
+			"#  # ",
+			"#####",
+			"   # ",
+			"     ",
+		},
+		'5': {
+			"#####",
+			"#    ",
+			"#### ",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'6': {
+			" ### ",
+			"#    ",
+			"#### ",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'7': {
+			"#####",
+			"    #",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#    ",
+			"     ",
+		},
+		'8': {
+			" ### ",
+			"#   #",
+			" ### ",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'9': {
+			" ### ",
+			"#   #",
+			"#   #",
+			" ####",
+			"    #",
+			" ### ",
+			"     ",
+		},
+	}
+}
+
+// Helper function for absolute value
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// CreateSessionAfterChallenge creates a session after successful challenge completion
+func (cm *ChallengeManager) CreateSessionAfterChallenge(clientIP, userAgent, host string) string {
+	sessionManager := GetSessionManager()
+	return sessionManager.CreateSession(clientIP, userAgent, host)
+}
+
+// CreateSessionCookie creates a session cookie for the response
+func (cm *ChallengeManager) CreateSessionCookie(sessionID string, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     "__defenra_session",
+		Value:    sessionID,
+		Path:     "/",
+		Secure:   secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   86400, // 24 hours
 	}
 }
