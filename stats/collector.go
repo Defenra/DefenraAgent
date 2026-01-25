@@ -140,7 +140,11 @@ func (sc *StatisticsCollector) SendStatistics() {
 	// отправляем статистику по TCP/UDP прокси
 	sc.sendProxyStatistics()
 
-	log.Printf("[Stats] Statistics sent to Core")
+	if systemMetrics != nil {
+		log.Printf("[Stats] Statistics sent to Core with system metrics")
+	} else {
+		log.Printf("[Stats] Statistics sent to Core without system metrics")
+	}
 }
 
 func (sc *StatisticsCollector) sendProxyStatistics() {
@@ -187,7 +191,8 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 	totalRateLimit := httpStats.RateLimitBlocks + httpsStats.RateLimitBlocks
 	totalFirewall := httpStats.FirewallBlocks + httpsStats.FirewallBlocks
 
-	if totalRequests == 0 && firewallStats.L4Blocks == 0 {
+	// Всегда отправляем статистику если есть системные метрики, даже если нет трафика
+	if totalRequests == 0 && firewallStats.L4Blocks == 0 && systemMetrics == nil {
 		return
 	}
 
