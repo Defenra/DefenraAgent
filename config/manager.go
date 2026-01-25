@@ -348,3 +348,30 @@ func (cm *ConfigManager) GetGeoCode() string {
 
 	return "XX" // Default if geo code not set
 }
+
+// GetAgentIP returns the agent's public IP address
+// This is a best-effort attempt to determine the agent's IP
+func (cm *ConfigManager) GetAgentIP() string {
+	// Try to get IP from a public service
+	// This is a simple implementation - in production you might want to cache this
+	resp, err := http.Get("https://api.ipify.org")
+	if err != nil {
+		log.Printf("[Config] Failed to get agent IP from ipify: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[Config] Failed to read agent IP response: %v", err)
+		return ""
+	}
+
+	ip := strings.TrimSpace(string(body))
+	if net.ParseIP(ip) == nil {
+		log.Printf("[Config] Invalid IP address received: %s", ip)
+		return ""
+	}
+
+	return ip
+}

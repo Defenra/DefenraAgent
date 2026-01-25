@@ -330,15 +330,68 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 					log.Printf("[DNS] Invalid IP address in A record: %s", record.Value)
 					continue
 				}
-				msg.Answer = append(msg.Answer, &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   question.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    record.TTL,
-					},
-					A: ip,
-				})
+
+				// Check if this record has HTTP proxy enabled
+				if record.HTTPProxyEnabled {
+					log.Printf("[DNS] A record %s has HTTP proxy enabled, returning agent IP instead of origin IP", record.Value)
+					
+					// Get client IP for agent selection
+					clientIP := extractClientIP(w.RemoteAddr())
+					
+					// Try to find best agent IP using GeoDNS logic if available
+					var agentIP string
+					if len(domainConfig.GeoDNSMap) > 0 {
+						clientLocation := "default"
+						if s.geoIP != nil {
+							detectedLocation := s.geoIP.GetLocation(clientIP)
+							if detectedLocation != "" {
+								clientLocation = detectedLocation
+							}
+						}
+						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
+						log.Printf("[DNS] Using GeoDNS agent selection for proxied record: %s (location: %s) → %s", queryName, clientLocation, agentIP)
+					}
+					
+					// If no GeoDNS map or no agent found, try to get agent IP from config
+					if agentIP == "" {
+						// Get agent's own IP address
+						agentIP = s.configMgr.GetAgentIP()
+						if agentIP == "" {
+							log.Printf("[DNS] No agent IP available, falling back to origin IP: %s", record.Value)
+							agentIP = record.Value
+						} else {
+							log.Printf("[DNS] Using agent's own IP for proxied record: %s → %s", queryName, agentIP)
+						}
+					}
+					
+					// Parse and validate agent IP
+					parsedAgentIP := net.ParseIP(agentIP)
+					if parsedAgentIP == nil {
+						log.Printf("[DNS] Invalid agent IP address: %s, falling back to origin IP: %s", agentIP, record.Value)
+						parsedAgentIP = ip
+					}
+					
+					msg.Answer = append(msg.Answer, &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   question.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    record.TTL,
+						},
+						A: parsedAgentIP,
+					})
+				} else {
+					// Regular A record without proxy - return original IP
+					msg.Answer = append(msg.Answer, &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   question.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    record.TTL,
+						},
+						A: ip,
+					})
+				}
 			}
 
 		case dns.TypeAAAA:
