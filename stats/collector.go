@@ -131,7 +131,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 				metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
 		}
 	} else {
-		log.Println("[Stats] System metrics collector not initialized")
+		log.Printf("[Stats] System metrics collector is nil")
 	}
 
 	// отправляем статистику по доменам (HTTP/HTTPS трафик) с системными метриками
@@ -192,9 +192,19 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 	totalFirewall := httpStats.FirewallBlocks + httpsStats.FirewallBlocks
 
 	// Всегда отправляем статистику если есть системные метрики, даже если нет трафика
-	if totalRequests == 0 && firewallStats.L4Blocks == 0 && systemMetrics == nil {
-		log.Println("[Stats] No traffic and no system metrics to send")
+	// Или если есть трафик/блоки
+	shouldSend := (totalRequests > 0) || (firewallStats.L4Blocks > 0) || (systemMetrics != nil)
+	
+	if !shouldSend {
+		log.Println("[Stats] No traffic, no blocks, and no system metrics to send")
 		return
+	}
+
+	// Если есть системные метрики, всегда отправляем их
+	if systemMetrics != nil {
+		log.Printf("[Stats] Sending system metrics: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
+			systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent, 
+			systemMetrics.LoadAverage1Min, systemMetrics.NumGoroutines)
 	}
 
 	// отправляем общую статистику для всех доменов
@@ -225,11 +235,22 @@ func (sc *StatisticsCollector) sendPayload(payload StatisticsPayload) {
 }
 
 func (sc *StatisticsCollector) sendPayloadUnsafe(payload StatisticsPayload) {
+	// Log what we're sending
+	if payload.SystemMetrics != nil {
+		log.Printf("[Stats] Sending payload with system metrics: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f",
+			payload.SystemMetrics.CPUUsagePercent, payload.SystemMetrics.MemoryUsagePercent, 
+			payload.SystemMetrics.LoadAverage1Min)
+	} else {
+		log.Printf("[Stats] Sending payload without system metrics")
+	}
+
 	data, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("[Stats] Error marshaling payload: %v", err)
 		return
 	}
+
+	log.Printf("[Stats] Sending %d bytes to %s", len(data), sc.coreURL+"/api/statistics")
 
 	req, err := http.NewRequest("POST", sc.coreURL+"/api/statistics", bytes.NewBuffer(data))
 	if err != nil {
