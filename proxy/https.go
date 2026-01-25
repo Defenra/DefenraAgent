@@ -161,7 +161,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		defer l7Protection.Stop()
 
 		suspicionLevel, browserType, err := l7Protection.AnalyzeRequest(r, clientIP, tlsFingerprint)
-		
+
 		if err != nil {
 			log.Printf("[HTTPS] L7 analysis error: %v", err)
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
@@ -196,7 +196,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 			// Build rule context
 			country, asn := firewall.GetGeoInfo(clientIP)
-			ctx := firewall.BuildRequestContext(r, clientIP, country, asn, browserType, "", tlsFingerprint, 
+			ctx := firewall.BuildRequestContext(r, clientIP, country, asn, browserType, "", tlsFingerprint,
 				requestCount, challengeCount, suspicionLevel, 0, false)
 
 			// Evaluate rules
@@ -463,7 +463,18 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		log.Printf("[HTTPS] Error proxying request: %v", err)
-		http.Error(w, "Backend error", http.StatusBadGateway)
+
+		// Use new error page template for origin server errors
+		challengeMgr := firewall.GetChallengeManager()
+		errorResponse := challengeMgr.IssueErrorPage(w, r, clientIP, 502, "Backend server unavailable")
+
+		// Apply error response headers
+		for key, value := range errorResponse.Headers {
+			w.Header().Set(key, value)
+		}
+		w.WriteHeader(errorResponse.StatusCode)
+		w.Write([]byte(errorResponse.Body))
+
 		atomic.AddUint64(&s.stats.ProxyErrors, 1)
 		return
 	}
@@ -472,6 +483,15 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	for key, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
+		}
+	}
+
+	// Add unique agent identifier header to response
+	if s.configMgr != nil {
+		agentID := s.configMgr.GetAgentID()
+		geoCode := s.configMgr.GetGeoCode()
+		if agentID != "" && geoCode != "" {
+			w.Header().Set("D-Agent-ID", geoCode+"+"+agentID[:8]) // Use first 8 chars of agent ID
 		}
 	}
 

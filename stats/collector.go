@@ -127,7 +127,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 			log.Printf("[Stats] Failed to collect system metrics: %v", err)
 		} else {
 			systemMetrics = metrics
-			log.Printf("[Stats] System metrics collected: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d", 
+			log.Printf("[Stats] System metrics collected: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
 				metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
 		}
 	} else {

@@ -128,17 +128,17 @@ func (smc *SystemMetricsCollector) collectMemoryMetrics(metrics *SystemMetrics) 
 	} else {
 		// For non-Linux systems, use runtime stats with better estimates
 		log.Printf("[Stats] Using runtime memory stats for %s", runtime.GOOS)
-		
+
 		// Estimate total system memory (rough approximation)
 		// Use Sys as a base but multiply by a factor to get closer to real system memory
-		estimatedTotal := m.Sys * 4 // Rough estimate: assume agent uses 1/4 of available memory
+		estimatedTotal := m.Sys * 4          // Rough estimate: assume agent uses 1/4 of available memory
 		if estimatedTotal < 1024*1024*1024 { // If less than 1GB, assume at least 4GB system
 			estimatedTotal = 4 * 1024 * 1024 * 1024
 		}
-		
+
 		metrics.MemoryTotalBytes = estimatedTotal
 		metrics.MemoryUsedBytes = m.Alloc + m.StackSys + m.HeapSys
-		
+
 		if metrics.MemoryTotalBytes > 0 {
 			metrics.MemoryUsagePercent = float64(metrics.MemoryUsedBytes) / float64(metrics.MemoryTotalBytes) * 100
 			// Cap at reasonable values
@@ -159,11 +159,11 @@ func (smc *SystemMetricsCollector) collectCPUMetrics(metrics *SystemMetrics, now
 		// For non-Linux systems, we can't easily get CPU usage
 		// Use a simple approximation based on goroutines and runtime stats
 		log.Printf("[Stats] CPU metrics not available on %s", runtime.GOOS)
-		
+
 		// Simple approximation: use number of goroutines as CPU load indicator
 		numCPU := runtime.NumCPU()
 		numGoroutines := runtime.NumGoroutine()
-		
+
 		// Rough estimate: if we have more goroutines than CPUs, assume some load
 		if numGoroutines > numCPU {
 			metrics.CPUUsagePercent = float64(numGoroutines-numCPU) / float64(numCPU) * 10
@@ -173,7 +173,7 @@ func (smc *SystemMetricsCollector) collectCPUMetrics(metrics *SystemMetrics, now
 		} else {
 			metrics.CPUUsagePercent = float64(numGoroutines) / float64(numCPU) * 5
 		}
-		
+
 		return nil
 	}
 
@@ -203,12 +203,12 @@ func (smc *SystemMetricsCollector) collectDiskMetrics(metrics *SystemMetrics, no
 		// For non-Linux systems, provide simulated values based on activity
 		// This gives users some visual feedback even on Windows/macOS
 		numGoroutines := runtime.NumGoroutine()
-		
+
 		// Simulate disk activity based on goroutine activity
 		baseActivity := uint64(numGoroutines * 1024) // 1KB per goroutine as base
 		metrics.DiskReadBytesPS = baseActivity
 		metrics.DiskWriteBytesPS = baseActivity / 2
-		
+
 		return nil
 	}
 
@@ -238,12 +238,12 @@ func (smc *SystemMetricsCollector) collectNetworkMetrics(metrics *SystemMetrics,
 		// For non-Linux systems, provide simulated values based on activity
 		// This gives users some visual feedback even on Windows/macOS
 		numGoroutines := runtime.NumGoroutine()
-		
+
 		// Simulate network activity based on goroutine activity
 		baseActivity := uint64(numGoroutines * 512) // 512 bytes per goroutine as base
 		metrics.NetworkRxBytesPS = baseActivity
 		metrics.NetworkTxBytesPS = baseActivity
-		
+
 		return nil
 	}
 
@@ -273,10 +273,10 @@ func (smc *SystemMetricsCollector) collectLoadAverage(metrics *SystemMetrics) er
 		// For non-Linux systems, simulate load average based on goroutines and CPU count
 		numCPU := runtime.NumCPU()
 		numGoroutines := runtime.NumGoroutine()
-		
+
 		// Simple simulation: load = goroutines / CPUs
 		baseLoad := float64(numGoroutines) / float64(numCPU)
-		
+
 		// Cap at reasonable values and add some variation
 		if baseLoad > 4.0 {
 			baseLoad = 4.0
@@ -284,7 +284,7 @@ func (smc *SystemMetricsCollector) collectLoadAverage(metrics *SystemMetrics) er
 		if baseLoad < 0.1 {
 			baseLoad = 0.1
 		}
-		
+
 		metrics.LoadAverage1Min = baseLoad
 		metrics.LoadAverage5Min = baseLoad * 0.9  // Slightly lower for 5min avg
 		metrics.LoadAverage15Min = baseLoad * 0.8 // Even lower for 15min avg
