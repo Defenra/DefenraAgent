@@ -84,14 +84,24 @@ func main() {
 	agentDiscovery := proxy.GetAgentDiscovery(coreURL, agentKey)
 	_ = agentDiscovery // Discovery starts automatically
 
-	// настраиваем статистику коллектор
+	// настраиваем статистику коллектор ПЕРЕД запуском горутин
+	log.Println("[Stats] Initializing statistics collector...")
 	statsCollector := stats.GetCollector()
+	log.Println("[Stats] Got collector instance")
 	statsCollector.SetConfig(coreURL, agentID, agentKey)
+	log.Printf("[Stats] Statistics collector configured with coreURL=%s, agentID=%s", coreURL, agentID)
+
+	// Тестируем сразу отправку статистики
+	log.Println("[Stats] Testing immediate statistics send...")
+	statsCollector.SendStatistics()
 
 	// запускаем отправку статистики каждые 2 минуты (более частая отправка)
 	go func() {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
+
+		// Небольшая задержка чтобы все сервисы запустились
+		time.Sleep(3 * time.Second)
 
 		// Отправляем статистику сразу при запуске
 		log.Println("[Stats] Sending initial statistics...")
@@ -107,6 +117,9 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
+
+		// Небольшая задержка чтобы все сервисы запустились
+		time.Sleep(5 * time.Second)
 
 		// Отправляем данные о клиентах сразу при запуске
 		log.Println("[Stats] Sending initial client data...")
