@@ -108,7 +108,11 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	domainConfig := s.configMgr.GetDomain(host)
 	if domainConfig == nil {
 		log.Printf("[HTTP] Domain not found: %s", host)
-		http.Error(w, "Domain not found", http.StatusNotFound)
+		
+		// Use beautiful error page instead of generic error
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 404, "Домен не найден. Данный домен не настроен на этом агенте.")
+		s.sendChallengeResponse(w, response)
 		return
 	}
 
