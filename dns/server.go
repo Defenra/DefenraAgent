@@ -11,10 +11,16 @@ import (
 )
 
 type DNSServer struct {
-	configMgr *config.ConfigManager
+	configMgr ConfigManagerInterface
 	geoIP     *GeoIPService
 	cache     *DNSCache
 	stats     *DNSStats
+}
+
+// ConfigManagerInterface defines the interface for config manager
+type ConfigManagerInterface interface {
+	GetDomain(domain string) *config.Domain
+	GetAgentIP() string
 }
 
 type DNSStats struct {
@@ -25,7 +31,7 @@ type DNSStats struct {
 	NXDomain      uint64
 }
 
-func StartDNSServer(configMgr *config.ConfigManager) {
+func StartDNSServer(configMgr ConfigManagerInterface) {
 	geoIP, err := NewGeoIPService("GeoLite2-City.mmdb")
 	if err != nil {
 		log.Printf("[DNS] Warning: GeoIP service not available: %v", err)
@@ -224,8 +230,67 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 		}
 	}
 
-	// если найден CNAME, возвращаем его и пытаемся разрешить целевой домен
+	// если найден CNAME, проверяем нужно ли применить CNAME Flattening
 	if cnameRecord != nil {
+		// CNAME Flattening: если CNAME запись имеет HTTPProxyEnabled и запрашивается A запись,
+		// возвращаем A запись с IP агента вместо CNAME (как у Cloudflare)
+		if cnameRecord.HTTPProxyEnabled && qtype == dns.TypeA {
+			log.Printf("[DNS] CNAME Flattening: %s has HTTP proxy enabled, returning A record with agent IP instead of CNAME", cnameRecord.Value)
+
+			// Get client IP for agent selection
+			clientIP := extractClientIP(w.RemoteAddr())
+
+			// Try to find best agent IP using GeoDNS logic if available
+			var agentIP string
+			if len(domainConfig.GeoDNSMap) > 0 {
+				clientLocation := "default"
+				if s.geoIP != nil {
+					detectedLocation := s.geoIP.GetLocation(clientIP)
+					if detectedLocation != "" {
+						clientLocation = detectedLocation
+					}
+				}
+				agentIP = findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
+				log.Printf("[DNS] CNAME Flattening: Using GeoDNS agent selection: %s (location: %s) → %s", queryName, clientLocation, agentIP)
+			}
+
+			// If no GeoDNS map or no agent found, try to get agent IP from config
+			if agentIP == "" {
+				// Get agent's own IP address
+				agentIP = s.configMgr.GetAgentIP()
+				if agentIP == "" {
+					log.Printf("[DNS] CNAME Flattening: No agent IP available, falling back to CNAME resolution")
+					// Fall back to regular CNAME processing
+				} else {
+					log.Printf("[DNS] CNAME Flattening: Using agent's own IP: %s → %s", queryName, agentIP)
+				}
+			}
+
+			// If we have agent IP, return A record instead of CNAME
+			if agentIP != "" {
+				parsedAgentIP := net.ParseIP(agentIP)
+				if parsedAgentIP != nil {
+					msg.Answer = append(msg.Answer, &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   question.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    cnameRecord.TTL,
+						},
+						A: parsedAgentIP,
+					})
+
+					if err := w.WriteMsg(msg); err != nil {
+						log.Printf("[DNS] Error writing CNAME flattened response: %v", err)
+					}
+					return
+				} else {
+					log.Printf("[DNS] CNAME Flattening: Invalid agent IP address: %s, falling back to CNAME", agentIP)
+				}
+			}
+		}
+
+		// Regular CNAME processing (no flattening needed or flattening failed)
 		targetDomain := cnameRecord.Value
 		// приводим к FQDN формату
 		targetFQDN := dns.Fqdn(targetDomain)
@@ -334,10 +399,10 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 				// Check if this record has HTTP proxy enabled
 				if record.HTTPProxyEnabled {
 					log.Printf("[DNS] A record %s has HTTP proxy enabled, returning agent IP instead of origin IP", record.Value)
-					
+
 					// Get client IP for agent selection
 					clientIP := extractClientIP(w.RemoteAddr())
-					
+
 					// Try to find best agent IP using GeoDNS logic if available
 					var agentIP string
 					if len(domainConfig.GeoDNSMap) > 0 {
@@ -351,7 +416,7 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
 						log.Printf("[DNS] Using GeoDNS agent selection for proxied record: %s (location: %s) → %s", queryName, clientLocation, agentIP)
 					}
-					
+
 					// If no GeoDNS map or no agent found, try to get agent IP from config
 					if agentIP == "" {
 						// Get agent's own IP address
@@ -363,14 +428,14 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 							log.Printf("[DNS] Using agent's own IP for proxied record: %s → %s", queryName, agentIP)
 						}
 					}
-					
+
 					// Parse and validate agent IP
 					parsedAgentIP := net.ParseIP(agentIP)
 					if parsedAgentIP == nil {
 						log.Printf("[DNS] Invalid agent IP address: %s, falling back to origin IP: %s", agentIP, record.Value)
 						parsedAgentIP = ip
 					}
-					
+
 					msg.Answer = append(msg.Answer, &dns.A{
 						Hdr: dns.RR_Header{
 							Name:   question.Name,

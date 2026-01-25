@@ -249,9 +249,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						// JS challenge was successfully validated
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
-						
+
 						log.Printf("[HTTPS] JS PoW challenge passed for IP %s, creating session %s", clientIP, sessionID)
-						
+
 						if r.Method == "POST" {
 							// POST request - redirect to clean URL
 							redirectURL := r.URL.Path
@@ -264,13 +264,13 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 									redirectURL += "?" + query.Encode()
 								}
 							}
-							
+
 							// Manually create redirect response to ensure cookie is set
 							w.Header().Set("Set-Cookie", sessionCookie.String())
 							w.Header().Set("Location", redirectURL)
 							w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 							w.WriteHeader(http.StatusFound)
-							
+
 							log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
 							return
 						} else {
@@ -293,21 +293,21 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						// CAPTCHA was successfully validated, create session and redirect
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
-						
+
 						log.Printf("[HTTPS] CAPTCHA challenge passed for IP %s, creating session %s", clientIP, sessionID)
-						
+
 						// Redirect to the original URL with query parameters
 						redirectURL := r.URL.Path
 						if r.URL.RawQuery != "" {
 							redirectURL += "?" + r.URL.RawQuery
 						}
-						
+
 						// Manually create redirect response to ensure cookie is set
 						w.Header().Set("Set-Cookie", sessionCookie.String())
 						w.Header().Set("Location", redirectURL)
 						w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 						w.WriteHeader(http.StatusFound)
-						
+
 						log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
 						return
 					}

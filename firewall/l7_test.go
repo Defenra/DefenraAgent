@@ -197,7 +197,7 @@ func TestChallengeManager(t *testing.T) {
 
 		// Test GET request with PoW parameters in URL
 		getReqWithPoW, _ := http.NewRequest("GET", "/test?defenra_pow_nonce=12345&defenra_pow_salt=test", nil)
-		
+
 		// Should fail with wrong nonce
 		if cm.ValidateJSChallenge(getReqWithPoW, 4) {
 			t.Error("Expected JS challenge to fail with wrong nonce in GET request")
@@ -207,7 +207,7 @@ func TestChallengeManager(t *testing.T) {
 		postData := "defenra_pow_nonce=12345&defenra_pow_salt=test"
 		postReq, _ := http.NewRequest("POST", "/test", strings.NewReader(postData))
 		postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		
+
 		// Should also fail with wrong nonce
 		if cm.ValidateJSChallenge(postReq, 4) {
 			t.Error("Expected JS challenge to fail with wrong nonce in POST request")
