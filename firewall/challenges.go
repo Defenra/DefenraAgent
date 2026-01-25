@@ -12,6 +12,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"log"
 	"math/big"
 	"net/http"
 	"strings"
@@ -387,7 +388,19 @@ func (cm *ChallengeManager) ValidateCaptchaChallenge(r *http.Request) bool {
 	delete(cm.captchaCache, captchaID)
 	cm.mu.Unlock()
 
-	return answer == strings.ToLower(captchaData.Answer)
+	isValid := answer == strings.ToLower(captchaData.Answer)
+
+	// If CAPTCHA is valid, clear violations for this IP
+	if isValid {
+		clientIP := getClientIP(r)
+		if clientIP != "" {
+			violationTracker := GetViolationTracker()
+			violationTracker.ClearViolations(clientIP)
+			log.Printf("[Challenge] CAPTCHA solved successfully, cleared violations for IP: %s", clientIP)
+		}
+	}
+
+	return isValid
 }
 
 // Helper functions
@@ -1978,6 +1991,30 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// getClientIP extracts client IP from request (helper for challenges)
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first IP in the chain
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
+		return r.RemoteAddr[:idx]
+	}
+
+	return r.RemoteAddr
 }
 
 // CreateSessionAfterChallenge creates a session after successful challenge completion

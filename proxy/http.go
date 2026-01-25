@@ -80,7 +80,11 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[HTTP] Request blocked: IP %s is banned", clientIP)
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
-		http.Error(w, "Forbidden", http.StatusForbidden)
+
+		// Use beautiful error page instead of generic Forbidden
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Доступ заблокирован. Ваш IP-адрес временно заблокирован системой безопасности.")
+		s.sendChallengeResponse(w, response)
 		return
 	}
 
@@ -133,14 +137,22 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			log.Printf("[HTTP] L7 analysis error: %v", err)
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
-			http.Error(w, "Request blocked", http.StatusForbidden)
+
+			// Use beautiful error page instead of generic Forbidden
+			challengeMgr := firewall.GetChallengeManager()
+			response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Запрос заблокирован системой безопасности.")
+			s.sendChallengeResponse(w, response)
 			return
 		}
 
 		if suspicionLevel < 0 {
 			log.Printf("[HTTP] Request blocked by L7 protection: %s", browserType)
 			atomic.AddUint64(&s.stats.BlockedRequests, 1)
-			http.Error(w, "Request blocked", http.StatusForbidden)
+
+			// Use beautiful error page instead of generic Forbidden
+			challengeMgr := firewall.GetChallengeManager()
+			response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, fmt.Sprintf("Запрос заблокирован. Причина: %s", browserType))
+			s.sendChallengeResponse(w, response)
 			return
 		}
 
@@ -209,10 +221,13 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 				}
 			default:
 				if suspicionLevel >= 4 {
-					// Block high suspicion requests
+					// Block high suspicion requests with beautiful error page
 					log.Printf("[HTTP] Request blocked: high suspicion level %d", suspicionLevel)
 					atomic.AddUint64(&s.stats.BlockedRequests, 1)
-					http.Error(w, "Request blocked", http.StatusForbidden)
+
+					challengeMgr := firewall.GetChallengeManager()
+					response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Запрос заблокирован из-за высокого уровня подозрительности.")
+					s.sendChallengeResponse(w, response)
 					return
 				}
 			}
@@ -244,7 +259,11 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 				if !whitelisted {
 					log.Printf("[HTTP] Request blocked: IP %s not in whitelist", clientIP)
 					atomic.AddUint64(&s.stats.BlockedRequests, 1)
-					http.Error(w, "Forbidden", http.StatusForbidden)
+
+					// Use beautiful error page instead of generic Forbidden
+					challengeMgr := firewall.GetChallengeManager()
+					response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Доступ запрещен. Ваш IP-адрес не находится в списке разрешенных.")
+					s.sendChallengeResponse(w, response)
 					return
 				}
 			}
@@ -264,16 +283,57 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 				atomic.AddUint64(&s.stats.BlockedRequests, 1)
 				atomic.AddUint64(&s.stats.RateLimitBlocks, 1)
 
-				// блокируем IP через iptables если превышен лимит
-				if s.firewallMgr != nil {
-					duration := time.Duration(domainConfig.HTTPProxy.AntiDDoS.BlockDurationSeconds) * time.Second
-					if err := s.firewallMgr.BanIP(clientIP, duration); err != nil {
-						log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
+				// Use progressive blocking system instead of immediate ban
+				violationTracker := firewall.GetViolationTracker()
+				escalationLevel := violationTracker.RecordViolation(clientIP, "rate_limit")
+
+				challengeMgr := firewall.GetChallengeManager()
+
+				switch escalationLevel {
+				case 1:
+					// First violation - show CAPTCHA challenge
+					log.Printf("[HTTP] Rate limit violation #1 for %s: showing CAPTCHA", clientIP)
+					response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
+					s.sendChallengeResponse(w, response)
+					return
+
+				case 2:
+					// Second violation - 10 minute block with error page
+					log.Printf("[HTTP] Rate limit violation #2 for %s: 10 minute block", clientIP)
+					response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, "Слишком много запросов. Вы заблокированы на 10 минут за превышение лимита скорости.")
+					s.sendChallengeResponse(w, response)
+
+					// Also ban via iptables for the same duration
+					if s.firewallMgr != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute); err != nil {
+							log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
+						}
+					}
+					return
+
+				case 3:
+					// Third+ violation - 30 minute block with error page
+					log.Printf("[HTTP] Rate limit violation #3+ for %s: 30 minute block", clientIP)
+					response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, "Слишком много запросов. Вы заблокированы на 30 минут за повторные нарушения лимита скорости.")
+					s.sendChallengeResponse(w, response)
+
+					// Also ban via iptables for the same duration
+					if s.firewallMgr != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute); err != nil {
+							log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
+						}
+					}
+					return
+
+				default:
+					// IP is currently blocked, check remaining time
+					if blocked, remaining := violationTracker.IsBlocked(clientIP); blocked {
+						log.Printf("[HTTP] IP %s still blocked for %v", clientIP, remaining)
+						response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, fmt.Sprintf("Вы заблокированы за превышение лимита скорости. Осталось: %v", remaining.Round(time.Second)))
+						s.sendChallengeResponse(w, response)
+						return
 					}
 				}
-
-				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-				return
 			}
 		}
 	}
@@ -293,13 +353,21 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	if !httpEnabled {
 		log.Printf("[HTTP] HTTP proxy not enabled for domain: %s (HTTPProxy.Enabled=%v)",
 			host, domainConfig.HTTPProxy.Enabled)
-		http.Error(w, "HTTP proxy not enabled", http.StatusForbidden)
+
+		// Use beautiful error page instead of generic Forbidden
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "HTTP прокси не включен для данного домена.")
+		s.sendChallengeResponse(w, response)
 		return
 	}
 
 	if domainConfig.HTTPProxy.Type == "https" {
 		log.Printf("[HTTP] Only HTTPS allowed for domain: %s", host)
-		http.Error(w, "HTTPS only", http.StatusForbidden)
+
+		// Use beautiful error page instead of generic Forbidden
+		challengeMgr := firewall.GetChallengeManager()
+		response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Для данного домена разрешен только HTTPS.")
+		s.sendChallengeResponse(w, response)
 		return
 	}
 
