@@ -65,6 +65,8 @@ func (sc *StatisticsCollector) SetConfig(coreURL, agentID, agentKey string) {
 	sc.agentID = agentID
 	sc.agentKey = agentKey
 	sc.clientReporter = NewClientReporter(coreURL, agentID, agentKey)
+	log.Printf("[Stats] Configuration set: coreURL=%s, agentID=%s, agentKey length=%d", 
+		coreURL, agentID, len(agentKey))
 }
 
 func (sc *StatisticsCollector) SetHTTPStats(stats proxy.HTTPStats) {
@@ -80,9 +82,10 @@ func (sc *StatisticsCollector) SetHTTPSStats(stats proxy.HTTPStats) {
 }
 
 func (sc *StatisticsCollector) UpdateFirewallStats() {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	log.Printf("[Stats] UpdateFirewallStats() called")
+	log.Printf("[Stats] About to call firewall.GetStats()")
 	sc.firewallStats = firewall.GetStats()
+	log.Printf("[Stats] firewall.GetStats() completed")
 }
 
 type StatisticsPayload struct {
@@ -103,24 +106,33 @@ type StatisticsPayload struct {
 }
 
 func (sc *StatisticsCollector) SendStatistics() {
+	log.Printf("[Stats] SendStatistics() called")
 	sc.mu.Lock()
 
 	if sc.coreURL == "" || sc.agentID == "" || sc.agentKey == "" {
-		log.Println("[Stats] Configuration not set, skipping statistics send")
+		log.Printf("[Stats] Configuration not set, skipping statistics send (coreURL=%s, agentID=%s, agentKey=%s)", 
+			sc.coreURL, sc.agentID, sc.agentKey)
 		sc.mu.Unlock()
 		return
 	}
 
+	log.Printf("[Stats] Configuration OK: coreURL=%s, agentID=%s", sc.coreURL, sc.agentID)
+
 	// собираем статистику из всех модулей
+	log.Printf("[Stats] About to call UpdateFirewallStats()")
 	sc.UpdateFirewallStats()
+	log.Printf("[Stats] UpdateFirewallStats() completed")
 
 	sc.mu.Unlock()
 
 	log.Printf("[Stats] Starting statistics collection and send process")
 
 	// получаем актуальную статистику из proxy модулей
+	log.Printf("[Stats] Getting HTTP stats...")
 	httpStats := proxy.GetHTTPStats()
+	log.Printf("[Stats] Getting HTTPS stats...")
 	httpsStats := proxy.GetHTTPSStats()
+	log.Printf("[Stats] Getting firewall stats...")
 	firewallStats := firewall.GetStats()
 
 	log.Printf("[Stats] Proxy stats collected: HTTP requests=%d, HTTPS requests=%d, L4 blocks=%d", 
@@ -155,6 +167,8 @@ func (sc *StatisticsCollector) SendStatistics() {
 			NumGoroutines:      runtime.NumGoroutine(),
 			Timestamp:          time.Now().Unix(),
 		}
+		log.Printf("[Stats] Created fallback system metrics: CPU=%.1f%%, Memory=%.1f%%, Goroutines=%d",
+			systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent, systemMetrics.NumGoroutines)
 	}
 
 	// отправляем статистику по доменам (HTTP/HTTPS трафик) с системными метриками
