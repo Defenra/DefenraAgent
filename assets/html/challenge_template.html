@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <style>
+        :root {
+            /* Палитра (Dark Zinc/Slate style) */
+            --bg-color: #09090b;
+            --card-bg: #18181b;
+            --border-color: #27272a;
+            --text-main: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --accent-blue: #3b82f6;
+            --accent-red: #ef4444;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+            --font-stack: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-stack);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            /* Тонкая сетка на фоне для технического вида */
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 40px 32px;
+            text-align: center;
+            box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Декоративная полоса сверху */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+            opacity: 0.8;
+            transition: background 0.3s ease;
+        }
+
+        /* Состояние ошибки меняет цвет полосы */
+        .card.error-state::before {
+            background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+        }
+
+        /* --- Анимация Радара (Loader) --- */
+        .loader-container {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .radar-spinner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            animation: spin 1.2s cubic-bezier(0.55, 0.055, 0.675, 0.19) infinite;
+        }
+
+        .radar-pulse {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: var(--accent-blue);
+            opacity: 0.2;
+            animation: pulse 2s ease-out infinite;
+        }
+
+        /* --- Иконка ошибки (Скрыта по умолчанию) --- */
+        .error-icon {
+            display: none;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px auto;
+            color: var(--accent-red);
+        }
+
+        .error-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- Progress Bar --- */
+        .progress-container {
+            width: 100%;
+            background-color: var(--border-color);
+            border-radius: 4px;
+            margin: 20px 0;
+            height: 8px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), #60a5fa);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* --- CAPTCHA Styles --- */
+        .captcha-container {
+            position: relative;
+            display: inline-block;
+            margin: 20px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .captcha-image {
+            display: block;
+            max-width: 100%;
+        }
+
+        .captcha-input {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin: 16px 0;
+            width: 200px;
+            text-align: center;
+            font-family: var(--font-mono);
+            letter-spacing: 2px;
+        }
+
+        .captcha-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            letter-spacing: -0.02em;
+        }
+
+        p {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        /* --- Техническая информация (Footer) --- */
+        .tech-info {
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: #52525b; /* Еще более приглушенный цвет */
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .info-label { 
+            opacity: 0.7; 
+        }
+        
+        .info-value { 
+            color: var(--text-muted); 
+        }
+
+        /* --- Кнопка (для капчи или ретрая) --- */
+        .action-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 8px;
+        }
+
+        .action-btn:hover {
+            border-color: var(--text-muted);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .action-btn.primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .action-btn.primary:hover {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+
+        /* --- Form Styles --- */
+        form {
+            margin: 0;
+        }
+
+        /* --- Status Messages --- */
+        .status-message {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 8px 0;
+            font-family: var(--font-mono);
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 480px) {
+            .container {
+                padding: 16px;
+            }
+            
+            .card {
+                padding: 24px 20px;
+            }
+            
+            .captcha-input {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card{{if .IsError}} error-state{{end}}" id="statusCard">
+            {{if .IsError}}
+                <!-- Режим ошибки -->
+                <div class="error-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                </div>
+            {{else if .ShowLoader}}
+                <!-- Режим проверки/загрузки -->
+                <div class="loader-container">
+                    <div class="radar-pulse"></div>
+                    <div class="radar-spinner"></div>
+                </div>
+            {{end}}
+
+            <h1>{{.Title}}</h1>
+            <p>{{.Message}}</p>
+
+            {{if .ShowProgress}}
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="status-message" id="statusMessage">{{.StatusMessage}}</div>
+            {{end}}
+
+            {{if .CaptchaData}}
+                <!-- CAPTCHA Challenge -->
+                <div class="captcha-container">
+                    <img src="data:image/png;base64,{{.CaptchaData.ImageData}}" alt="CAPTCHA" class="captcha-image">
+                </div>
+                
+                <form method="POST" action="{{.ActionURL}}">
+                    <input type="hidden" name="captcha_id" value="{{.CaptchaData.ID}}">
+                    <input type="text" name="captcha_answer" placeholder="Введите текст с картинки" 
+                           autocomplete="off" required class="captcha-input" maxlength="6">
+                    <br>
+                    <button type="submit" class="action-btn primary">Проверить</button>
+                </form>
+                
+                <p style="font-size: 12px; margin-top: 16px;">
+                    <a href="javascript:location.reload()" style="color: var(--text-muted); text-decoration: none;">
+                        Не видите изображение? Обновить страницу
+                    </a>
+                </p>
+            {{end}}
+
+            {{if .ShowRetryButton}}
+                <button id="retryBtn" class="action-btn" onclick="window.location.reload()">
+                    Повторить попытку
+                </button>
+            {{end}}
+
+            <div class="tech-info">
+                <div class="info-row">
+                    <span class="info-label">Ray ID:</span>
+                    <span class="info-value">{{.RayID}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Your IP:</span>
+                    <span class="info-value">{{.ClientIP}}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">System:</span>
+                    <span class="info-value">Defenra Shield</span>
+                </div>
+                {{if .AgentID}}
+                <div class="info-row">
+                    <span class="info-label">Agent:</span>
+                    <span class="info-value">{{.AgentID}}</span>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    {{if .JSCode}}
+    <script>
+        {{.JSCode}}
+    </script>
+    {{end}}
+</body>
+</html>

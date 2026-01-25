@@ -47,28 +47,28 @@ type AgentInfo struct {
 }
 
 type AntiDDoS struct {
-	Enabled              bool                `json:"enabled"`
-	RateLimit            *RateLimit          `json:"rateLimit,omitempty"`
-	BlockDurationSeconds int                 `json:"blockDurationSeconds"`
-	Slowloris            *Slowloris          `json:"slowloris,omitempty"`
-	IPWhitelist          []string            `json:"ipWhitelist,omitempty"`
-	ProxyIPHeaders       []string            `json:"proxyIpHeaders,omitempty"`
-	L7Protection         *L7Protection       `json:"l7Protection,omitempty"`
-	ChallengeSettings    *ChallengeSettings  `json:"challengeSettings,omitempty"`
+	Enabled              bool                 `json:"enabled"`
+	RateLimit            *RateLimit           `json:"rateLimit,omitempty"`
+	BlockDurationSeconds int                  `json:"blockDurationSeconds"`
+	Slowloris            *Slowloris           `json:"slowloris,omitempty"`
+	IPWhitelist          []string             `json:"ipWhitelist,omitempty"`
+	ProxyIPHeaders       []string             `json:"proxyIpHeaders,omitempty"`
+	L7Protection         *L7Protection        `json:"l7Protection,omitempty"`
+	ChallengeSettings    *ChallengeSettings   `json:"challengeSettings,omitempty"`
 	CustomRules          []CustomFirewallRule `json:"customRules,omitempty"`
 }
 
 type L7Protection struct {
-	Enabled                 bool     `json:"enabled"`
-	TLSFingerprintEnabled   bool     `json:"tlsFingerprintEnabled"`
-	BotDetectionEnabled     bool     `json:"botDetectionEnabled"`
-	BrowserValidationEnabled bool    `json:"browserValidationEnabled"`
-	FingerprintRateLimit    int      `json:"fingerprintRateLimit"`    // requests per window for unknown fingerprints
-	IPRateLimit             int      `json:"ipRateLimit"`             // requests per window per IP
-	FailChallengeRateLimit  int      `json:"failChallengeRateLimit"`  // failed challenge attempts per IP
-	SuspiciousThreshold     int      `json:"suspiciousThreshold"`     // base suspicion level (0-4)
-	BlockedFingerprints     []string `json:"blockedFingerprints"`     // fingerprints to block immediately
-	AllowedFingerprints     []string `json:"allowedFingerprints"`     // fingerprints to always allow
+	Enabled                  bool     `json:"enabled"`
+	TLSFingerprintEnabled    bool     `json:"tlsFingerprintEnabled"`
+	BotDetectionEnabled      bool     `json:"botDetectionEnabled"`
+	BrowserValidationEnabled bool     `json:"browserValidationEnabled"`
+	FingerprintRateLimit     int      `json:"fingerprintRateLimit"`   // requests per window for unknown fingerprints
+	IPRateLimit              int      `json:"ipRateLimit"`            // requests per window per IP
+	FailChallengeRateLimit   int      `json:"failChallengeRateLimit"` // failed challenge attempts per IP
+	SuspiciousThreshold      int      `json:"suspiciousThreshold"`    // base suspicion level (0-4)
+	BlockedFingerprints      []string `json:"blockedFingerprints"`    // fingerprints to block immediately
+	AllowedFingerprints      []string `json:"allowedFingerprints"`    // fingerprints to always allow
 }
 
 type ChallengeSettings struct {

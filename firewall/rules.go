@@ -25,25 +25,25 @@ type ExpressionFilter struct {
 }
 
 type RequestContext struct {
-	ClientIP        string
-	Country         string
-	ASN             string
-	BrowserType     string
-	BotType         string
-	TLSFingerprint  string
-	RequestCount    int
-	ChallengeCount  int
-	Host            string
-	Method          string
-	URL             string
-	Path            string
-	Query           string
-	UserAgent       string
-	Headers         map[string]string
-	SuspicionLevel  int
-	IsCloudflare    bool
-	IsAttack        bool
-	RequestsPerSec  int
+	ClientIP       string
+	Country        string
+	ASN            string
+	BrowserType    string
+	BotType        string
+	TLSFingerprint string
+	RequestCount   int
+	ChallengeCount int
+	Host           string
+	Method         string
+	URL            string
+	Path           string
+	Query          string
+	UserAgent      string
+	Headers        map[string]string
+	SuspicionLevel int
+	IsCloudflare   bool
+	IsAttack       bool
+	RequestsPerSec int
 }
 
 func NewRuleEngine() *RuleEngine {
@@ -132,9 +132,9 @@ func NewExpressionFilter(expression string) (*ExpressionFilter, error) {
 func (ef *ExpressionFilter) Matches(ctx *RequestContext) bool {
 	// Simple expression evaluator
 	// In production, use a proper expression parser like govaluate or similar
-	
+
 	expr := strings.ToLower(ef.expression)
-	
+
 	// Replace context variables
 	expr = strings.ReplaceAll(expr, "ip.src", fmt.Sprintf("'%s'", ctx.ClientIP))
 	expr = strings.ReplaceAll(expr, "ip.country", fmt.Sprintf("'%s'", strings.ToLower(ctx.Country)))
@@ -145,14 +145,14 @@ func (ef *ExpressionFilter) Matches(ctx *RequestContext) bool {
 	expr = strings.ReplaceAll(expr, "ip.requests", strconv.Itoa(ctx.RequestCount))
 	expr = strings.ReplaceAll(expr, "ip.http_requests", strconv.Itoa(ctx.RequestCount))
 	expr = strings.ReplaceAll(expr, "ip.challenge_requests", strconv.Itoa(ctx.ChallengeCount))
-	
+
 	expr = strings.ReplaceAll(expr, "http.host", fmt.Sprintf("'%s'", strings.ToLower(ctx.Host)))
 	expr = strings.ReplaceAll(expr, "http.method", fmt.Sprintf("'%s'", strings.ToLower(ctx.Method)))
 	expr = strings.ReplaceAll(expr, "http.url", fmt.Sprintf("'%s'", strings.ToLower(ctx.URL)))
 	expr = strings.ReplaceAll(expr, "http.path", fmt.Sprintf("'%s'", strings.ToLower(ctx.Path)))
 	expr = strings.ReplaceAll(expr, "http.query", fmt.Sprintf("'%s'", strings.ToLower(ctx.Query)))
 	expr = strings.ReplaceAll(expr, "http.user_agent", fmt.Sprintf("'%s'", strings.ToLower(ctx.UserAgent)))
-	
+
 	expr = strings.ReplaceAll(expr, "proxy.stage", strconv.Itoa(ctx.SuspicionLevel))
 	expr = strings.ReplaceAll(expr, "proxy.cloudflare", strconv.FormatBool(ctx.IsCloudflare))
 	expr = strings.ReplaceAll(expr, "proxy.attack", strconv.FormatBool(ctx.IsAttack))
@@ -164,7 +164,7 @@ func (ef *ExpressionFilter) Matches(ctx *RequestContext) bool {
 
 func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 	// Handle common patterns
-	
+
 	// Country checks: ip.country == 'cn'
 	if strings.Contains(expr, "==") {
 		parts := strings.Split(expr, "==")
@@ -176,7 +176,7 @@ func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 			return left == right
 		}
 	}
-	
+
 	// Contains checks: http.user_agent contains 'bot'
 	if strings.Contains(expr, " contains ") {
 		parts := strings.Split(expr, " contains ")
@@ -188,39 +188,39 @@ func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 			return strings.Contains(left, right)
 		}
 	}
-	
+
 	// Greater than: ip.requests > 100
 	if strings.Contains(expr, " > ") {
 		parts := strings.Split(expr, " > ")
 		if len(parts) == 2 {
 			left := strings.TrimSpace(parts[0])
 			right := strings.TrimSpace(parts[1])
-			
+
 			leftVal, err1 := strconv.Atoi(left)
 			rightVal, err2 := strconv.Atoi(right)
-			
+
 			if err1 == nil && err2 == nil {
 				return leftVal > rightVal
 			}
 		}
 	}
-	
+
 	// Less than: ip.requests < 10
 	if strings.Contains(expr, " < ") {
 		parts := strings.Split(expr, " < ")
 		if len(parts) == 2 {
 			left := strings.TrimSpace(parts[0])
 			right := strings.TrimSpace(parts[1])
-			
+
 			leftVal, err1 := strconv.Atoi(left)
 			rightVal, err2 := strconv.Atoi(right)
-			
+
 			if err1 == nil && err2 == nil {
 				return leftVal < rightVal
 			}
 		}
 	}
-	
+
 	// AND conditions: condition1 && condition2
 	if strings.Contains(expr, " && ") {
 		parts := strings.Split(expr, " && ")
@@ -231,7 +231,7 @@ func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 		}
 		return true
 	}
-	
+
 	// OR conditions: condition1 || condition2
 	if strings.Contains(expr, " || ") {
 		parts := strings.Split(expr, " || ")
@@ -242,7 +242,7 @@ func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 		}
 		return false
 	}
-	
+
 	// Boolean values
 	if expr == "true" {
 		return true
@@ -250,7 +250,7 @@ func (ef *ExpressionFilter) evaluateSimpleExpression(expr string) bool {
 	if expr == "false" {
 		return false
 	}
-	
+
 	return false
 }
 
@@ -264,25 +264,25 @@ func BuildRequestContext(r *http.Request, clientIP, country, asn, browserType, b
 	}
 
 	return &RequestContext{
-		ClientIP:        clientIP,
-		Country:         country,
-		ASN:             asn,
-		BrowserType:     browserType,
-		BotType:         botType,
-		TLSFingerprint:  tlsFingerprint,
-		RequestCount:    requestCount,
-		ChallengeCount:  challengeCount,
-		Host:            strings.ToLower(r.Host),
-		Method:          strings.ToLower(r.Method),
-		URL:             strings.ToLower(r.URL.String()),
-		Path:            strings.ToLower(r.URL.Path),
-		Query:           strings.ToLower(r.URL.RawQuery),
-		UserAgent:       strings.ToLower(r.UserAgent()),
-		Headers:         headers,
-		SuspicionLevel:  suspicionLevel,
-		IsCloudflare:    isCloudflareRequest(r),
-		IsAttack:        isAttack,
-		RequestsPerSec:  requestsPerSec,
+		ClientIP:       clientIP,
+		Country:        country,
+		ASN:            asn,
+		BrowserType:    browserType,
+		BotType:        botType,
+		TLSFingerprint: tlsFingerprint,
+		RequestCount:   requestCount,
+		ChallengeCount: challengeCount,
+		Host:           strings.ToLower(r.Host),
+		Method:         strings.ToLower(r.Method),
+		URL:            strings.ToLower(r.URL.String()),
+		Path:           strings.ToLower(r.URL.Path),
+		Query:          strings.ToLower(r.URL.RawQuery),
+		UserAgent:      strings.ToLower(r.UserAgent()),
+		Headers:        headers,
+		SuspicionLevel: suspicionLevel,
+		IsCloudflare:   isCloudflareRequest(r),
+		IsAttack:       isAttack,
+		RequestsPerSec: requestsPerSec,
 	}
 }
 
@@ -294,13 +294,13 @@ func isCloudflareRequest(r *http.Request) bool {
 		"CF-Visitor",
 		"CF-IPCountry",
 	}
-	
+
 	for _, header := range cfHeaders {
 		if r.Header.Get(header) != "" {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -308,17 +308,17 @@ func isCloudflareRequest(r *http.Request) bool {
 func GetGeoInfo(ip string) (country, asn string) {
 	// This should integrate with a GeoIP database
 	// For now, return placeholder values
-	
+
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		return "unknown", "unknown"
 	}
-	
+
 	// Check for private/local IPs
 	if parsedIP.IsPrivate() || parsedIP.IsLoopback() {
 		return "local", "local"
 	}
-	
+
 	// Placeholder - integrate with MaxMind GeoIP2 or similar
 	return "unknown", "unknown"
 }
@@ -357,6 +357,6 @@ func GetDefaultRules() []CompiledRule {
 			Enabled:    true,
 		},
 	}
-	
+
 	return rules
 }

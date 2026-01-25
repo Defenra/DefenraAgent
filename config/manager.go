@@ -341,10 +341,10 @@ func (cm *ConfigManager) GetAgentID() string {
 func (cm *ConfigManager) GetGeoCode() string {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	
+
 	if cm.geoCode != "" {
 		return cm.geoCode
 	}
-	
+
 	return "XX" // Default if geo code not set
 }

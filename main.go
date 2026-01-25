@@ -92,11 +92,11 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
-		
+
 		// Отправляем статистику сразу при запуске
 		log.Println("[Stats] Sending initial statistics...")
 		statsCollector.SendStatistics()
-		
+
 		for range ticker.C {
 			log.Println("[Stats] Sending periodic statistics...")
 			statsCollector.SendStatistics()
@@ -107,11 +107,11 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
-		
+
 		// Отправляем данные о клиентах сразу при запуске
 		log.Println("[Stats] Sending initial client data...")
 		statsCollector.SendClientData()
-		
+
 		for range ticker.C {
 			log.Println("[Stats] Sending periodic client data...")
 			statsCollector.SendClientData()
