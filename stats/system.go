@@ -72,23 +72,29 @@ func (smc *SystemMetricsCollector) CollectMetrics() (*SystemMetrics, error) {
 		Timestamp:     now.Unix(),
 	}
 
+	log.Printf("[SystemMetrics] Starting collection on %s", runtime.GOOS)
+
 	// Collect memory metrics
 	if err := smc.collectMemoryMetrics(metrics); err != nil {
+		log.Printf("[SystemMetrics] Memory collection failed: %v", err)
 		return nil, fmt.Errorf("failed to collect memory metrics: %w", err)
 	}
 
 	// Collect CPU metrics (requires previous measurement for percentage calculation)
 	if err := smc.collectCPUMetrics(metrics, now); err != nil {
+		log.Printf("[SystemMetrics] CPU collection failed: %v", err)
 		return nil, fmt.Errorf("failed to collect CPU metrics: %w", err)
 	}
 
 	// Collect disk I/O metrics
 	if err := smc.collectDiskMetrics(metrics, now); err != nil {
+		log.Printf("[SystemMetrics] Disk collection failed: %v", err)
 		return nil, fmt.Errorf("failed to collect disk metrics: %w", err)
 	}
 
 	// Collect network I/O metrics
 	if err := smc.collectNetworkMetrics(metrics, now); err != nil {
+		log.Printf("[SystemMetrics] Network collection failed: %v", err)
 		return nil, fmt.Errorf("failed to collect network metrics: %w", err)
 	}
 
@@ -96,9 +102,14 @@ func (smc *SystemMetricsCollector) CollectMetrics() (*SystemMetrics, error) {
 	if err := smc.collectLoadAverage(metrics); err != nil {
 		// Load average is not critical, just log and continue
 		// On Windows this will fail, which is expected
+		log.Printf("[SystemMetrics] Load average collection failed (expected on Windows): %v", err)
 	}
 
 	smc.lastCollectTime = now
+	
+	log.Printf("[SystemMetrics] Collection complete: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
+		metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
+	
 	return metrics, nil
 }
 
