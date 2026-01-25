@@ -182,21 +182,45 @@ func AddHopHeader(r *http.Request, agentID string) {
 	}
 }
 
-// selectBestAgent selects the best agent based on health score and latency
+// selectBestAgent selects the best agent based on health score and load score
 func selectBestAgent(agents []*DiscoveredAgent) *DiscoveredAgent {
 	if len(agents) == 0 {
 		return nil
 	}
 
-	// Sort agents by health score (descending)
+	// Filter out overloaded agents first
+	availableAgents := make([]*DiscoveredAgent, 0)
+	for _, agent := range agents {
+		if !agent.IsOverloaded {
+			availableAgents = append(availableAgents, agent)
+		}
+	}
+
+	// If all agents are overloaded, log warning and return nil (will fallback to origin)
+	if len(availableAgents) == 0 {
+		log.Printf("[Routing] All %d agents are overloaded (>80%% load), falling back to origin", len(agents))
+		return nil
+	}
+
+	// Select agent with best combined score: health score (0-1) and inverted load score (0-1)
 	var best *DiscoveredAgent
 	bestScore := 0.0
 
-	for _, agent := range agents {
-		if agent.HealthScore > bestScore {
-			bestScore = agent.HealthScore
+	for _, agent := range availableAgents {
+		// Combined score: 70% health score + 30% inverted load score
+		// Load score is 0-100, so we invert it: (100 - loadScore) / 100
+		invertedLoadScore := (100.0 - agent.LoadScore) / 100.0
+		combinedScore := (agent.HealthScore * 0.7) + (invertedLoadScore * 0.3)
+
+		if combinedScore > bestScore {
+			bestScore = combinedScore
 			best = agent
 		}
+	}
+
+	if best != nil {
+		log.Printf("[Routing] Selected agent %s: health=%.2f, load=%.1f%%, combined=%.2f",
+			best.AgentID, best.HealthScore, best.LoadScore, bestScore)
 	}
 
 	return best

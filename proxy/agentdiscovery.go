@@ -34,6 +34,9 @@ type DiscoveredAgent struct {
 	Latency         time.Duration `json:"-"`
 	HealthScore     float64       `json:"-"` // 0.0 to 1.0
 	LastHealthCheck time.Time     `json:"-"`
+	// Load metrics from Core
+	LoadScore    float64 `json:"-"` // 0-100, higher = more loaded
+	IsOverloaded bool    `json:"-"` // true if loadScore > 80
 }
 
 // Location represents geographic location of an agent
@@ -146,10 +149,11 @@ func (ad *AgentDiscovery) DiscoverAgents() error {
 
 	var response struct {
 		Agents []struct {
-			AgentID   string `json:"agentId"`
-			IPAddress string `json:"ipAddress"`
-			IsActive  bool   `json:"isActive"`
-			LastSeen  string `json:"lastSeen"`
+			AgentID   string  `json:"agentId"`
+			IPAddress string  `json:"ipAddress"`
+			IsActive  bool    `json:"isActive"`
+			LastSeen  string  `json:"lastSeen"`
+			LoadScore float64 `json:"loadScore"` // Load score from Core (0-100)
 			IPInfo    *struct {
 				Country     string  `json:"country"`
 				CountryCode string  `json:"countryCode"`
@@ -206,13 +210,15 @@ func (ad *AgentDiscovery) DiscoverAgents() error {
 		lastSeen, _ := time.Parse(time.RFC3339, agentData.LastSeen)
 
 		agent := &DiscoveredAgent{
-			AgentID:     agentData.AgentID,
-			Endpoint:    endpoint,
-			IPAddress:   agentData.IPAddress,
-			Location:    location,
-			IsActive:    agentData.IsActive,
-			LastSeen:    lastSeen,
-			HealthScore: 1.0, // Default to healthy
+			AgentID:      agentData.AgentID,
+			Endpoint:     endpoint,
+			IPAddress:    agentData.IPAddress,
+			Location:     location,
+			IsActive:     agentData.IsActive,
+			LastSeen:     lastSeen,
+			HealthScore:  1.0,                        // Default to healthy
+			LoadScore:    agentData.LoadScore,        // Load score from Core (0-100)
+			IsOverloaded: agentData.LoadScore > 80.0, // Mark as overloaded if >80%
 		}
 
 		// Preserve existing health metrics if agent was already known
@@ -310,18 +316,20 @@ func (ad *AgentDiscovery) updateHealthScore(agentID string, isHealthy bool, late
 	agent.HealthScore = healthScore
 }
 
-// GetHealthyAgents returns list of healthy agents sorted by health score
+// GetHealthyAgents returns list of healthy and non-overloaded agents sorted by health score
 func (ad *AgentDiscovery) GetHealthyAgents() []*DiscoveredAgent {
 	ad.mu.RLock()
 	defer ad.mu.RUnlock()
 
 	healthy := make([]*DiscoveredAgent, 0)
 	for _, agent := range ad.agents {
-		if agent.HealthScore > 0.3 { // Threshold for "healthy"
+		// Agent must be healthy (health score > 0.3) AND not overloaded (load score <= 80%)
+		if agent.HealthScore > 0.3 && !agent.IsOverloaded {
 			healthy = append(healthy, agent)
 		}
 	}
 
+	log.Printf("[AgentDiscovery] Found %d healthy and non-overloaded agents out of %d total", len(healthy), len(ad.agents))
 	return healthy
 }
 
