@@ -193,6 +193,7 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 
 	// Всегда отправляем статистику если есть системные метрики, даже если нет трафика
 	if totalRequests == 0 && firewallStats.L4Blocks == 0 && systemMetrics == nil {
+		log.Println("[Stats] No traffic and no system metrics to send")
 		return
 	}
 
