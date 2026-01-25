@@ -206,7 +206,7 @@ func (cm *ChallengeManager) IssueJSChallenge(w http.ResponseWriter, r *http.Requ
 	rayID := generateRayID()
 
 	// Create heavily obfuscated JavaScript
-	obfuscator := NewJSObfuscator()
+	obfuscator := NewSimpleJSObfuscator()
 	obfuscatedScript := obfuscator.ObfuscatePoWScript(publicSalt, target)
 
 	data := ChallengeTemplateData{
@@ -271,7 +271,7 @@ func (cm *ChallengeManager) IssueCaptchaChallenge(w http.ResponseWriter, r *http
 	rayID := generateRayID()
 
 	// Add obfuscated CAPTCHA validation script
-	obfuscator := NewJSObfuscator()
+	obfuscator := NewSimpleJSObfuscator()
 	captchaScript := obfuscator.ObfuscateCaptchaScript()
 
 	data := ChallengeTemplateData{
@@ -406,8 +406,15 @@ func (cm *ChallengeManager) generateCaptcha(captchaID string) *CaptchaData {
 	// Fill background with dark theme
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{24, 24, 27, 255}}, image.Point{}, draw.Src)
 
-	// Add text with contrasting color (simplified implementation)
-	// In production, use a proper CAPTCHA library with fonts and distortion
+	// Draw text manually (simple pixel-based implementation)
+	textColor := color.RGBA{228, 228, 231, 255} // Light gray text
+
+	// Draw each character using simple pixel patterns
+	for i, char := range answer {
+		x := 25 + i*30
+		y := 25
+		drawSimpleChar(img, char, x, y, textColor)
+	}
 
 	// Convert to base64
 	var buf bytes.Buffer
@@ -1232,4 +1239,321 @@ func getEmbeddedTemplate() string {
     {{end}}
 </body>
 </html>`
+}
+
+// Simple character drawing function for CAPTCHA
+func drawSimpleChar(img *image.RGBA, char rune, x, y int, c color.RGBA) {
+	// Simple 5x7 pixel patterns for characters
+	patterns := map[rune][]string{
+		'A': {
+			" ### ",
+			"#   #",
+			"#   #",
+			"#####",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'B': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"#### ",
+			"#   #",
+			"#### ",
+			"     ",
+		},
+		'C': {
+			" ####",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			" ####",
+			"     ",
+		},
+		'D': {
+			"#### ",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#### ",
+			"     ",
+		},
+		'E': {
+			"#####",
+			"#    ",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'F': {
+			"#####",
+			"#    ",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"     ",
+		},
+		'G': {
+			" ####",
+			"#    ",
+			"# ###",
+			"#   #",
+			"#   #",
+			" ####",
+			"     ",
+		},
+		'H': {
+			"#   #",
+			"#   #",
+			"#####",
+			"#   #",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'J': {
+			"  ###",
+			"    #",
+			"    #",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'K': {
+			"#   #",
+			"#  # ",
+			"# #  ",
+			"##   ",
+			"# #  ",
+			"#  ##",
+			"     ",
+		},
+		'L': {
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'M': {
+			"#   #",
+			"## ##",
+			"# # #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'N': {
+			"#   #",
+			"##  #",
+			"# # #",
+			"#  ##",
+			"#   #",
+			"#   #",
+			"     ",
+		},
+		'P': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"#    ",
+			"#    ",
+			"#    ",
+			"     ",
+		},
+		'Q': {
+			" ### ",
+			"#   #",
+			"#   #",
+			"# # #",
+			"#  ##",
+			" ####",
+			"     ",
+		},
+		'R': {
+			"#### ",
+			"#   #",
+			"#### ",
+			"# #  ",
+			"#  # ",
+			"#   #",
+			"     ",
+		},
+		'S': {
+			" ####",
+			"#    ",
+			" ### ",
+			"    #",
+			"    #",
+			"#### ",
+			"     ",
+		},
+		'T': {
+			"#####",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"     ",
+		},
+		'U': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'V': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"#   #",
+			" # # ",
+			"  #  ",
+			"     ",
+		},
+		'W': {
+			"#   #",
+			"#   #",
+			"#   #",
+			"# # #",
+			"## ##",
+			"#   #",
+			"     ",
+		},
+		'X': {
+			"#   #",
+			" # # ",
+			"  #  ",
+			"  #  ",
+			" # # ",
+			"#   #",
+			"     ",
+		},
+		'Y': {
+			"#   #",
+			" # # ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"  #  ",
+			"     ",
+		},
+		'Z': {
+			"#####",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#    ",
+			"#####",
+			"     ",
+		},
+		'2': {
+			" ### ",
+			"#   #",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#####",
+			"     ",
+		},
+		'3': {
+			" ### ",
+			"#   #",
+			"  ## ",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'4': {
+			"   # ",
+			"  ## ",
+			" # # ",
+			"#  # ",
+			"#####",
+			"   # ",
+			"     ",
+		},
+		'5': {
+			"#####",
+			"#    ",
+			"#### ",
+			"    #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'6': {
+			" ### ",
+			"#    ",
+			"#### ",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'7': {
+			"#####",
+			"    #",
+			"   # ",
+			"  #  ",
+			" #   ",
+			"#    ",
+			"     ",
+		},
+		'8': {
+			" ### ",
+			"#   #",
+			" ### ",
+			"#   #",
+			"#   #",
+			" ### ",
+			"     ",
+		},
+		'9': {
+			" ### ",
+			"#   #",
+			"#   #",
+			" ####",
+			"    #",
+			" ### ",
+			"     ",
+		},
+	}
+
+	pattern, exists := patterns[char]
+	if !exists {
+		// Draw a simple rectangle for unknown characters
+		for dy := 0; dy < 7; dy++ {
+			for dx := 0; dx < 5; dx++ {
+				if dy == 0 || dy == 6 || dx == 0 || dx == 4 {
+					img.Set(x+dx, y+dy, c)
+				}
+			}
+		}
+		return
+	}
+
+	// Draw the character pattern
+	for dy, row := range pattern {
+		for dx, pixel := range row {
+			if pixel == '#' {
+				img.Set(x+dx, y+dy, c)
+			}
+		}
+	}
 }
