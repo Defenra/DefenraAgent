@@ -110,21 +110,21 @@ func TestSystemMetricsCollectorCrossplatform(t *testing.T) {
 			t.Error("Load average should not be negative on Linux")
 		}
 	} else {
-		// On non-Linux systems, these should be 0 (indicating unavailable)
-		if metrics.LoadAverage1Min != 0 || metrics.LoadAverage5Min != 0 || metrics.LoadAverage15Min != 0 {
-			t.Error("Load average should be 0 on non-Linux systems")
+		// On non-Linux systems, these should be simulated values (not 0)
+		if metrics.LoadAverage1Min < 0 || metrics.LoadAverage5Min < 0 || metrics.LoadAverage15Min < 0 {
+			t.Error("Load average should not be negative on non-Linux systems")
 		}
 
-		if metrics.CPUUsagePercent != 0 {
-			t.Error("CPU usage should be 0 on non-Linux systems")
+		if metrics.CPUUsagePercent < 0 {
+			t.Error("CPU usage should not be negative on non-Linux systems")
 		}
 
-		if metrics.DiskReadBytesPS != 0 || metrics.DiskWriteBytesPS != 0 {
-			t.Error("Disk I/O should be 0 on non-Linux systems")
+		if metrics.DiskReadBytesPS < 0 || metrics.DiskWriteBytesPS < 0 {
+			t.Error("Disk I/O should not be negative on non-Linux systems")
 		}
 
-		if metrics.NetworkRxBytesPS != 0 || metrics.NetworkTxBytesPS != 0 {
-			t.Error("Network I/O should be 0 on non-Linux systems")
+		if metrics.NetworkRxBytesPS < 0 || metrics.NetworkTxBytesPS < 0 {
+			t.Error("Network I/O should not be negative on non-Linux systems")
 		}
 	}
 }
