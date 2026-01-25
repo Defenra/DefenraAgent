@@ -36,23 +36,23 @@ func TestViolationTracker(t *testing.T) {
 
 	t.Run("third violation triggers 30min block", func(t *testing.T) {
 		testIP3 := "192.168.1.103" // Use different IP to avoid interference
-		
+
 		// Record violations with time gaps to avoid being blocked
 		tracker.RecordViolation(testIP3, "rate_limit") // 1st - CAPTCHA
-		
+
 		// Wait a bit and record second violation
 		time.Sleep(1 * time.Millisecond)
 		tracker.RecordViolation(testIP3, "rate_limit") // 2nd - 10min block
-		
+
 		// Clear the block to allow third violation
 		tracker.mu.Lock()
 		if violation, exists := tracker.violations[testIP3]; exists {
 			violation.BlockedUntil = time.Now().Add(-1 * time.Minute) // Set to past
 		}
 		tracker.mu.Unlock()
-		
+
 		level := tracker.RecordViolation(testIP3, "rate_limit") // 3rd
-		
+
 		if level != 3 {
 			t.Errorf("Expected escalation level 3 (30min block), got %d", level)
 		}
@@ -69,7 +69,7 @@ func TestViolationTracker(t *testing.T) {
 
 	t.Run("clear violations resets count", func(t *testing.T) {
 		tracker.ClearViolations(testIP)
-		
+
 		count := tracker.GetViolationCount(testIP)
 		if count != 0 {
 			t.Errorf("Expected violation count 0 after clearing, got %d", count)
@@ -84,17 +84,17 @@ func TestViolationTracker(t *testing.T) {
 
 	t.Run("violations expire after 1 hour", func(t *testing.T) {
 		testIP2 := "192.168.1.101"
-		
+
 		// Record a violation
 		tracker.RecordViolation(testIP2, "rate_limit")
-		
+
 		// Manually set last time to more than 1 hour ago
 		tracker.mu.Lock()
 		if violation, exists := tracker.violations[testIP2]; exists {
 			violation.LastTime = time.Now().Add(-2 * time.Hour)
 		}
 		tracker.mu.Unlock()
-		
+
 		// Next violation should be level 1 (reset)
 		level := tracker.RecordViolation(testIP2, "rate_limit")
 		if level != 1 {
@@ -104,11 +104,11 @@ func TestViolationTracker(t *testing.T) {
 
 	t.Run("blocked IP returns 0 escalation", func(t *testing.T) {
 		testIP3 := "192.168.1.102"
-		
+
 		// Create a blocked IP
 		tracker.RecordViolation(testIP3, "rate_limit") // 1st
 		tracker.RecordViolation(testIP3, "rate_limit") // 2nd - should block for 10min
-		
+
 		// Try to record another violation while blocked
 		level := tracker.RecordViolation(testIP3, "rate_limit")
 		if level != 0 {
