@@ -245,27 +245,40 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						response := challengeMgr.IssueJSChallenge(w, r, clientIP, challengeSettings.JSChallenge.Difficulty)
 						s.sendChallengeResponse(w, response)
 						return
-					} else if r.Method == "POST" {
-						// JS challenge was successfully validated, create session and redirect
+					} else {
+						// JS challenge was successfully validated
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 						
 						log.Printf("[HTTPS] JS PoW challenge passed for IP %s, creating session %s", clientIP, sessionID)
 						
-						// Redirect to the original URL with query parameters
-						redirectURL := r.URL.Path
-						if r.URL.RawQuery != "" {
-							redirectURL += "?" + r.URL.RawQuery
+						if r.Method == "POST" {
+							// POST request - redirect to clean URL
+							redirectURL := r.URL.Path
+							if r.URL.RawQuery != "" {
+								// Remove PoW parameters from query string
+								query := r.URL.Query()
+								query.Del("defenra_pow_nonce")
+								query.Del("defenra_pow_salt")
+								if len(query) > 0 {
+									redirectURL += "?" + query.Encode()
+								}
+							}
+							
+							// Manually create redirect response to ensure cookie is set
+							w.Header().Set("Set-Cookie", sessionCookie.String())
+							w.Header().Set("Location", redirectURL)
+							w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+							w.WriteHeader(http.StatusFound)
+							
+							log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
+							return
+						} else {
+							// GET request with valid PoW - set session cookie and continue processing
+							http.SetCookie(w, sessionCookie)
+							log.Printf("[HTTPS] GET request with valid PoW, session created, continuing to origin")
+							// Continue processing the request normally
 						}
-						
-						// Manually create redirect response to ensure cookie is set
-						w.Header().Set("Set-Cookie", sessionCookie.String())
-						w.Header().Set("Location", redirectURL)
-						w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-						w.WriteHeader(http.StatusFound)
-						
-						log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
-						return
 					}
 				}
 			case 3:
