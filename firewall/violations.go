@@ -107,7 +107,7 @@ func (vt *ViolationTracker) CheckViolationStatus(clientIP string) int {
 	}
 
 	now := time.Now()
-	
+
 	// Check if currently blocked
 	if now.Before(violation.BlockedUntil) {
 		// Return appropriate block level based on violation count

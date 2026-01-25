@@ -196,7 +196,16 @@ func (cm *ChallengeManager) ValidateCookieChallenge(r *http.Request, clientIP st
 	accessKey := fmt.Sprintf("%s_%s_%s_%d", clientIP, r.UserAgent(), r.Host, time.Now().Hour())
 	expectedCookie := cm.generateVerificationCookie(accessKey)
 
-	return cookie.Value == expectedCookie
+	isValid := cookie.Value == expectedCookie
+
+	// If cookie challenge is valid, clear violations for this IP
+	if isValid {
+		violationTracker := GetViolationTracker()
+		violationTracker.ClearViolations(clientIP)
+		log.Printf("[Challenge] Cookie challenge passed, cleared violations for IP: %s", clientIP)
+	}
+
+	return isValid
 }
 
 // JavaScript PoW Challenge (Stage 2)
@@ -256,7 +265,19 @@ func (cm *ChallengeManager) ValidateJSChallenge(r *http.Request, difficulty int)
 	hash := sha256Hash(input)
 	target := strings.Repeat("0", difficulty)
 
-	return strings.HasPrefix(hash, target)
+	isValid := strings.HasPrefix(hash, target)
+
+	// If JS challenge is valid, clear violations for this IP
+	if isValid {
+		clientIP := getClientIP(r)
+		if clientIP != "" {
+			violationTracker := GetViolationTracker()
+			violationTracker.ClearViolations(clientIP)
+			log.Printf("[Challenge] JS PoW solved successfully, cleared violations for IP: %s", clientIP)
+		}
+	}
+
+	return isValid
 }
 
 // CAPTCHA Challenge (Stage 3)

@@ -197,6 +197,12 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 						response := challengeMgr.IssueCookieChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
 						return
+					} else {
+						// Cookie challenge was successfully validated, create session
+						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
+						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
+						http.SetCookie(w, sessionCookie)
+						// Continue processing the request
 					}
 				}
 			case 2:
@@ -207,6 +213,15 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 						response := challengeMgr.IssueJSChallenge(w, r, clientIP, challengeSettings.JSChallenge.Difficulty)
 						s.sendChallengeResponse(w, response)
 						return
+					} else if r.Method == "POST" {
+						// JS challenge was successfully validated, create session and redirect
+						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
+						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
+						http.SetCookie(w, sessionCookie)
+
+						// Redirect to the original URL (GET request)
+						http.Redirect(w, r, r.URL.Path, http.StatusFound)
+						return
 					}
 				}
 			case 3:
@@ -216,6 +231,15 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 						l7Protection.RecordChallengeFailure(clientIP)
 						response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
+						return
+					} else if r.Method == "POST" {
+						// CAPTCHA was successfully validated, create session and redirect
+						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
+						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
+						http.SetCookie(w, sessionCookie)
+
+						// Redirect to the original URL (GET request)
+						http.Redirect(w, r, r.URL.Path, http.StatusFound)
 						return
 					}
 				}
