@@ -76,7 +76,7 @@ func (cl *ConnectionLimiter) CheckConnection(remoteAddr string) bool {
 		// Block IP for 5 minutes on connection limit exceeded
 		state.blocked = true
 		state.blockUntil = now.Add(5 * time.Minute)
-		log.Printf("[CONN] Connection limit exceeded for IP %s (%d/%d), blocking for 5 minutes", 
+		log.Printf("[CONN] Connection limit exceeded for IP %s (%d/%d), blocking for 5 minutes",
 			ip, state.count, cl.maxConnPerIP)
 		return false
 	}
@@ -206,6 +206,26 @@ func (cl *ConnectionLimiter) GetStats() map[string]interface{} {
 	}
 }
 
+// UpdateLimits updates the connection limits dynamically
+func (cl *ConnectionLimiter) UpdateLimits(maxConnPerIP int) {
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+
+	oldLimit := cl.maxConnPerIP
+	cl.maxConnPerIP = maxConnPerIP
+
+	if oldLimit != maxConnPerIP {
+		log.Printf("[CONN] Connection limit updated: %d -> %d connections per IP", oldLimit, maxConnPerIP)
+	}
+}
+
+// GetCurrentLimit returns the current connection limit per IP
+func (cl *ConnectionLimiter) GetCurrentLimit() int {
+	cl.mu.RLock()
+	defer cl.mu.RUnlock()
+	return cl.maxConnPerIP
+}
+
 // Stop stops the connection limiter
 func (cl *ConnectionLimiter) Stop() {
 	close(cl.stopChan)
@@ -216,8 +236,8 @@ var globalConnectionLimiter *ConnectionLimiter
 // GetConnectionLimiter returns the global connection limiter instance
 func GetConnectionLimiter() *ConnectionLimiter {
 	if globalConnectionLimiter == nil {
-		// Default: max 10 connections per IP, 5 minute timeout
-		globalConnectionLimiter = NewConnectionLimiter(10, 5*time.Minute)
+		// Default: max 100 connections per IP, 5 minute timeout (increased from 10)
+		globalConnectionLimiter = NewConnectionLimiter(100, 5*time.Minute)
 	}
 	return globalConnectionLimiter
 }

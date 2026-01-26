@@ -65,7 +65,7 @@ func (sc *StatisticsCollector) SetConfig(coreURL, agentID, agentKey string) {
 	sc.agentID = agentID
 	sc.agentKey = agentKey
 	sc.clientReporter = NewClientReporter(coreURL, agentID, agentKey)
-	log.Printf("[Stats] Configuration set: coreURL=%s, agentID=%s, agentKey length=%d", 
+	log.Printf("[Stats] Configuration set: coreURL=%s, agentID=%s, agentKey length=%d",
 		coreURL, agentID, len(agentKey))
 }
 
@@ -110,7 +110,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 	sc.mu.Lock()
 
 	if sc.coreURL == "" || sc.agentID == "" || sc.agentKey == "" {
-		log.Printf("[Stats] Configuration not set, skipping statistics send (coreURL=%s, agentID=%s, agentKey=%s)", 
+		log.Printf("[Stats] Configuration not set, skipping statistics send (coreURL=%s, agentID=%s, agentKey=%s)",
 			sc.coreURL, sc.agentID, sc.agentKey)
 		sc.mu.Unlock()
 		return
@@ -135,7 +135,7 @@ func (sc *StatisticsCollector) SendStatistics() {
 	log.Printf("[Stats] Getting firewall stats...")
 	firewallStats := firewall.GetStats()
 
-	log.Printf("[Stats] Proxy stats collected: HTTP requests=%d, HTTPS requests=%d, L4 blocks=%d", 
+	log.Printf("[Stats] Proxy stats collected: HTTP requests=%d, HTTPS requests=%d, L4 blocks=%d",
 		httpStats.TotalRequests, httpsStats.TotalRequests, firewallStats.L4Blocks)
 
 	// собираем системные метрики - ВСЕГДА должны быть доступны
@@ -231,13 +231,13 @@ func (sc *StatisticsCollector) sendDomainStatistics(httpStats, httpsStats proxy.
 
 	// ВСЕГДА отправляем статистику для системных метрик
 	// Это критически важно для мониторинга агентов
-	log.Printf("[Stats] Preparing to send statistics: requests=%d, blocks=%d, systemMetrics=%v", 
+	log.Printf("[Stats] Preparing to send statistics: requests=%d, blocks=%d, systemMetrics=%v",
 		totalRequests, firewallStats.L4Blocks, systemMetrics != nil)
 
 	// Если есть системные метрики, логируем их
 	if systemMetrics != nil {
 		log.Printf("[Stats] Sending system metrics: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
-			systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent, 
+			systemMetrics.CPUUsagePercent, systemMetrics.MemoryUsagePercent,
 			systemMetrics.LoadAverage1Min, systemMetrics.NumGoroutines)
 	} else {
 		log.Printf("[Stats] No system metrics available - this should not happen!")
@@ -274,7 +274,7 @@ func (sc *StatisticsCollector) sendPayloadUnsafe(payload StatisticsPayload) {
 	// Log what we're sending
 	if payload.SystemMetrics != nil {
 		log.Printf("[Stats] Sending payload with system metrics: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f",
-			payload.SystemMetrics.CPUUsagePercent, payload.SystemMetrics.MemoryUsagePercent, 
+			payload.SystemMetrics.CPUUsagePercent, payload.SystemMetrics.MemoryUsagePercent,
 			payload.SystemMetrics.LoadAverage1Min)
 	} else {
 		log.Printf("[Stats] Sending payload without system metrics")

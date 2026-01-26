@@ -185,9 +185,9 @@ var maliciousFingerprints = map[string]string{
 func NewL7Protection(config *L7Config) *L7Protection {
 	if config == nil {
 		config = &L7Config{
-			FingerprintRateLimit:   20,  // Reduced from 50
-			IPRateLimit:            30,  // Reduced from 100
-			FailChallengeRateLimit: 5,   // Reduced from 10
+			FingerprintRateLimit:   20, // Reduced from 50
+			IPRateLimit:            30, // Reduced from 100
+			FailChallengeRateLimit: 5,  // Reduced from 10
 			SuspiciousThreshold:    1,
 			RateWindow:             5 * time.Second, // Reduced from 10 seconds
 			KnownFingerprints:      knownFingerprints,
@@ -231,7 +231,7 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 	// Analyze User-Agent header FIRST - before any rate limiting
 	userAgent := r.Header.Get("User-Agent")
 	uaSuspicion, uaReason := AnalyzeUserAgent(userAgent)
-	
+
 	// If User-Agent is immediately suspicious (level 4), block right away
 	if uaSuspicion >= 4 {
 		return uaSuspicion, uaReason, nil

@@ -100,7 +100,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	atomic.AddUint64(&s.stats.TotalRequests, 1)
 
 	clientIP := getClientIP(r)
-	
+
 	// Connection-level protection - check before any processing
 	connLimiter := firewall.GetConnectionLimiter()
 	if !connLimiter.CheckConnection(r.RemoteAddr) {
@@ -143,7 +143,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	domainConfig := s.configMgr.GetDomain(host)
 	if domainConfig == nil {
 		log.Printf("[HTTPS] Domain not found: %s", host)
-		
+
 		// Use beautiful error page instead of generic error
 		challengeMgr := firewall.GetChallengeManager()
 		response := challengeMgr.IssueErrorPage(w, r, clientIP, 404, "Домен не найден. Данный домен не настроен на этом агенте.")
@@ -527,7 +527,7 @@ func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host str
 	if len(parts) >= 2 {
 		subdomain := parts[0]
 		parentDomain := strings.Join(parts[1:], ".")
-		
+
 		// If the domain config is for the parent domain, look for CNAME record
 		if domainConfig.Domain == parentDomain {
 			for _, record := range domainConfig.DNSRecords {
@@ -536,7 +536,7 @@ func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host str
 					// CNAME record found, use its value as target
 					// The value could be another domain name or IP
 					// For now, we'll treat it as the target to proxy to
-					
+
 					// If CNAME value looks like a domain, we need to resolve it
 					// For simplicity, let's check if it's an IP or domain
 					if net.ParseIP(record.Value) != nil {

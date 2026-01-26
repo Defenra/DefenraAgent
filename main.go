@@ -52,6 +52,12 @@ func main() {
 
 	configMgr := config.NewConfigManager(coreURL, agentID, agentKey)
 
+	// Set up connection limit updater callback
+	configMgr.SetConnectionLimitUpdater(func(maxConnPerIP int) {
+		connLimiter := firewall.GetConnectionLimiter()
+		connLimiter.UpdateLimits(maxConnPerIP)
+	})
+
 	go configMgr.StartPolling(time.Duration(pollingInterval) * time.Second)
 
 	log.Println("Waiting for initial configuration...")
