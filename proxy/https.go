@@ -442,14 +442,35 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Check if HTTP proxy is enabled OR if any DNS record has HTTPProxyEnabled
+	// Check if HTTP proxy is enabled for this specific domain/subdomain
 	httpEnabled := domainConfig.HTTPProxy.Enabled
 	if !httpEnabled {
-		// Check if any DNS record allows HTTP proxy
-		for _, record := range domainConfig.DNSRecords {
-			if record.HTTPProxyEnabled {
-				httpEnabled = true
-				break
+		// For subdomains, check if the specific DNS record has HTTPProxyEnabled
+		parts := strings.Split(host, ".")
+		if len(parts) >= 2 {
+			subdomain := parts[0]
+			parentDomain := strings.Join(parts[1:], ".")
+			
+			// If this is a subdomain request and domain config is for parent
+			if domainConfig.Domain == parentDomain {
+				// Check if the specific subdomain record has HTTP proxy enabled
+				for _, record := range domainConfig.DNSRecords {
+					if record.Name == subdomain && record.HTTPProxyEnabled {
+						httpEnabled = true
+						log.Printf("[HTTPS] HTTP proxy enabled for subdomain %s via DNS record", host)
+						break
+					}
+				}
+			}
+		}
+		
+		// If still not enabled, check if any DNS record allows HTTP proxy (fallback)
+		if !httpEnabled {
+			for _, record := range domainConfig.DNSRecords {
+				if record.HTTPProxyEnabled {
+					httpEnabled = true
+					break
+				}
 			}
 		}
 	}
