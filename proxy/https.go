@@ -160,6 +160,42 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Apply custom firewall rules BEFORE L7 protection (for early allow/block)
+	// This allows rules to work even when L7 protection is disabled
+	if domainConfig.HTTPProxy.AntiDDoS != nil && len(domainConfig.HTTPProxy.AntiDDoS.CustomRules) > 0 {
+		ruleEngine := firewall.NewRuleEngine()
+		for _, rule := range domainConfig.HTTPProxy.AntiDDoS.CustomRules {
+			if rule.Enabled {
+				ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled)
+			}
+		}
+
+		// Build minimal rule context for early evaluation
+		country, asn := firewall.GetGeoInfo(clientIP)
+		ctx := firewall.BuildRequestContext(r, clientIP, country, asn, "", "", "",
+			0, 0, 0, 0, false)
+
+		// Evaluate rules with base suspicion of 0
+		suspicionLevel := ruleEngine.EvaluateRules(ctx, 0)
+
+		// Handle early allow/block actions
+		if suspicionLevel == 0 {
+			// Rule explicitly allowed this request - skip all security checks
+			log.Printf("[HTTPS] Request allowed by custom rule for IP %s", clientIP)
+			skipSecurity = true
+			skipRateLimit = true
+		} else if suspicionLevel >= 999 {
+			// Rule explicitly blocked this request
+			log.Printf("[HTTPS] Request blocked by custom rule for IP %s", clientIP)
+			atomic.AddUint64(&s.stats.BlockedRequests, 1)
+
+			challengeMgr := firewall.GetChallengeManager()
+			response := challengeMgr.IssueErrorPage(w, r, clientIP, 403, "Запрос заблокирован пользовательским правилом.")
+			s.sendChallengeResponse(w, response)
+			return
+		}
+	}
+
 	// L7 Anti-DDoS Protection
 	if !skipSecurity && domainConfig.HTTPProxy.AntiDDoS != nil && domainConfig.HTTPProxy.AntiDDoS.L7Protection != nil && domainConfig.HTTPProxy.AntiDDoS.L7Protection.Enabled {
 		l7Config := &firewall.L7Config{
