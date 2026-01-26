@@ -33,7 +33,7 @@ func TestSimpleRateLimit(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		suspicion, reason, err := l7.AnalyzeRequest(req, testIP, "")
 		t.Logf("Request %d: suspicion=%d, reason='%s', err=%v", i+1, suspicion, reason, err)
-		
+
 		if err != nil {
 			t.Fatalf("Unexpected error on request %d: %v", i+1, err)
 		}
@@ -45,7 +45,7 @@ func TestSimpleRateLimit(t *testing.T) {
 	// Next request should be blocked by IP rate limit
 	suspicion, reason, err := l7.AnalyzeRequest(req, testIP, "")
 	t.Logf("Request 4 (should be blocked): suspicion=%d, reason='%s', err=%v", suspicion, reason, err)
-	
+
 	if err == nil {
 		t.Error("Expected request to be blocked by IP rate limit")
 	}

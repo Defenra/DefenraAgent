@@ -24,11 +24,11 @@ func TestDebugUserAgentAnalysis(t *testing.T) {
 	for _, tc := range testCases {
 		level, reason := AnalyzeUserAgent(tc.userAgent)
 		t.Logf("User-Agent: '%s' -> Level: %d, Reason: %s", tc.userAgent, level, reason)
-		
+
 		if level != tc.expectedLevel {
 			t.Errorf("Expected level %d for '%s', got %d", tc.expectedLevel, tc.userAgent, level)
 		}
-		
+
 		blocked := level >= 4
 		if blocked != tc.expectedBlocked {
 			t.Errorf("Expected blocked=%v for '%s', got %v", tc.expectedBlocked, tc.userAgent, blocked)
@@ -62,7 +62,7 @@ func TestDebugL7Analysis(t *testing.T) {
 
 		suspicion, reason, err := l7.AnalyzeRequest(req, testIP, "")
 		t.Logf("Request %d: suspicion=%d, reason='%s', err=%v", i+1, suspicion, reason, err)
-		
+
 		if suspicion < 4 && err == nil {
 			t.Errorf("Request %d should be blocked (suspicion >= 4 or error), got suspicion=%d, err=%v", i+1, suspicion, err)
 		}

@@ -14,14 +14,15 @@ import (
 )
 
 type ConfigManager struct {
-	coreURL  string
-	agentID  string
-	agentKey string
-	geoCode  string // Agent's geo code (country code)
-	config   *Config
-	mu       sync.RWMutex
-	client   *http.Client
-	stats    Stats
+	coreURL                string
+	agentID                string
+	agentKey               string
+	geoCode                string // Agent's geo code (country code)
+	config                 *Config
+	mu                     sync.RWMutex
+	client                 *http.Client
+	stats                  Stats
+	connectionLimitUpdater func(int) // Callback to update connection limits
 }
 
 type Stats struct {
@@ -229,6 +230,9 @@ func (cm *ConfigManager) updateConfig(resp PollResponse) {
 		cm.geoCode = resp.GeoCode
 	}
 
+	// Update global connection limits based on domain configurations
+	cm.updateConnectionLimits()
+
 	cm.stats.mu.Lock()
 	cm.stats.DomainsLoaded = len(resp.Domains)
 	cm.stats.ProxiesActive = len(resp.Proxies)
@@ -300,7 +304,7 @@ func (cm *ConfigManager) GetDomain(domain string) *Domain {
 	if len(parts) >= 2 {
 		subdomain := parts[0]
 		parentDomain := strings.Join(parts[1:], ".")
-		
+
 		// Look for parent domain with CNAME record for this subdomain
 		for i := range cm.config.Domains {
 			if cm.config.Domains[i].Domain == parentDomain {
@@ -373,6 +377,13 @@ func (cm *ConfigManager) GetGeoCode() string {
 	return "XX" // Default if geo code not set
 }
 
+// SetConnectionLimitUpdater sets the callback function to update connection limits
+func (cm *ConfigManager) SetConnectionLimitUpdater(updater func(int)) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.connectionLimitUpdater = updater
+}
+
 // GetAgentIP returns the agent's public IP address
 // This is a best-effort attempt to determine the agent's IP
 func (cm *ConfigManager) GetAgentIP() string {
@@ -398,4 +409,25 @@ func (cm *ConfigManager) GetAgentIP() string {
 	}
 
 	return ip
+}
+
+// updateConnectionLimits updates the global connection limiter with the highest limit from all domains
+func (cm *ConfigManager) updateConnectionLimits() {
+	maxLimit := 100 // Default minimum
+
+	// Find the highest maxConnections value from all domains
+	for _, domain := range cm.config.Domains {
+		if domain.HTTPProxy.AntiDDoS != nil && domain.HTTPProxy.AntiDDoS.Slowloris != nil {
+			if domain.HTTPProxy.AntiDDoS.Slowloris.MaxConnections > maxLimit {
+				maxLimit = domain.HTTPProxy.AntiDDoS.Slowloris.MaxConnections
+			}
+		}
+	}
+
+	log.Printf("[Config] Updating connection limits to %d connections per IP", maxLimit)
+
+	// Call the callback if set
+	if cm.connectionLimitUpdater != nil {
+		cm.connectionLimitUpdater(maxLimit)
+	}
 }

@@ -115,10 +115,10 @@ func (smc *SystemMetricsCollector) CollectMetrics() (*SystemMetrics, error) {
 	}
 
 	smc.lastCollectTime = now
-	
+
 	log.Printf("[SystemMetrics] Collection complete: CPU=%.1f%%, Memory=%.1f%%, Load=%.2f, Goroutines=%d",
 		metrics.CPUUsagePercent, metrics.MemoryUsagePercent, metrics.LoadAverage1Min, metrics.NumGoroutines)
-	
+
 	// Always return metrics, never return an error
 	return metrics, nil
 }

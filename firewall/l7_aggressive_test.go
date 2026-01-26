@@ -9,9 +9,9 @@ import (
 func TestAggressiveL7Protection(t *testing.T) {
 	// Create L7 protection with aggressive settings
 	config := &L7Config{
-		FingerprintRateLimit:   20,  // Reduced from 50
-		IPRateLimit:            30,  // Reduced from 100
-		FailChallengeRateLimit: 5,   // Reduced from 10
+		FingerprintRateLimit:   20, // Reduced from 50
+		IPRateLimit:            30, // Reduced from 100
+		FailChallengeRateLimit: 5,  // Reduced from 10
 		SuspiciousThreshold:    1,
 		RateWindow:             5 * time.Second, // Reduced from 10 seconds
 		KnownFingerprints:      GetKnownFingerprints(),
@@ -111,9 +111,9 @@ func TestAggressiveL7Protection(t *testing.T) {
 func TestAggressiveRateLimiting(t *testing.T) {
 	// Create L7 protection with very aggressive rate limiting
 	config := &L7Config{
-		FingerprintRateLimit:   5,   // Very low limit
-		IPRateLimit:            10,  // Very low limit
-		FailChallengeRateLimit: 2,   // Very low limit
+		FingerprintRateLimit:   5,  // Very low limit
+		IPRateLimit:            10, // Very low limit
+		FailChallengeRateLimit: 2,  // Very low limit
 		SuspiciousThreshold:    1,
 		RateWindow:             5 * time.Second,
 		KnownFingerprints:      GetKnownFingerprints(),
@@ -183,13 +183,13 @@ func TestSpamAttackSimulation(t *testing.T) {
 		req.RemoteAddr = testIP + ":12345"
 
 		suspicion, reason, err := l7.AnalyzeRequest(req, testIP, "")
-		
+
 		if suspicion >= 4 {
 			blockedBySuspicion++
 		} else if err != nil {
 			blockedByRateLimit++
 		}
-		
+
 		// Log first few for debugging
 		if i < 5 {
 			t.Logf("Request %d: suspicion=%d, reason='%s', err=%v", i+1, suspicion, reason, err)
@@ -197,7 +197,7 @@ func TestSpamAttackSimulation(t *testing.T) {
 	}
 
 	totalBlocked := blockedBySuspicion + blockedByRateLimit
-	
+
 	t.Logf("Spam attack simulation results:")
 	t.Logf("- Total requests: %d", totalRequests)
 	t.Logf("- Blocked by suspicion (User-Agent): %d", blockedBySuspicion)
