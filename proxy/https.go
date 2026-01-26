@@ -522,36 +522,42 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *HTTPSProxyServer) findProxyTarget(domainConfig *config.Domain, host string) string {
-	// Check if this is a CNAME resolution case
+	// Check if this is a subdomain resolution case
 	parts := strings.Split(host, ".")
 	if len(parts) >= 2 {
 		subdomain := parts[0]
 		parentDomain := strings.Join(parts[1:], ".")
 
-		// If the domain config is for the parent domain, look for CNAME record
+		// If the domain config is for the parent domain, look for DNS record for this subdomain
 		if domainConfig.Domain == parentDomain {
 			for _, record := range domainConfig.DNSRecords {
-				if record.Type == "CNAME" && record.Name == subdomain {
-					log.Printf("[HTTPS] Resolving CNAME: %s -> %s", host, record.Value)
-					// CNAME record found, use its value as target
-					// The value could be another domain name or IP
-					// For now, we'll treat it as the target to proxy to
+				if record.Name == subdomain {
+					if record.Type == "CNAME" {
+						log.Printf("[HTTPS] Resolving CNAME: %s -> %s", host, record.Value)
+						// CNAME record found, use its value as target
+						// The value could be another domain name or IP
+						// For now, we'll treat it as the target to proxy to
 
-					// If CNAME value looks like a domain, we need to resolve it
-					// For simplicity, let's check if it's an IP or domain
-					if net.ParseIP(record.Value) != nil {
-						// It's an IP address
-						return record.Value
-					} else {
-						// It's a domain name, we should resolve it
-						// For now, let's look for A records in the same domain that match
-						for _, aRecord := range domainConfig.DNSRecords {
-							if aRecord.Type == "A" && (aRecord.Name == record.Value || aRecord.Name == "@") {
-								return aRecord.Value
+						// If CNAME value looks like a domain, we need to resolve it
+						// For simplicity, let's check if it's an IP or domain
+						if net.ParseIP(record.Value) != nil {
+							// It's an IP address
+							return record.Value
+						} else {
+							// It's a domain name, we should resolve it
+							// For now, let's look for A records in the same domain that match
+							for _, aRecord := range domainConfig.DNSRecords {
+								if aRecord.Type == "A" && (aRecord.Name == record.Value || aRecord.Name == "@") {
+									return aRecord.Value
+								}
 							}
+							// If no A record found, return the CNAME value as-is
+							// The HTTP client will resolve it
+							return record.Value
 						}
-						// If no A record found, return the CNAME value as-is
-						// The HTTP client will resolve it
+					} else if record.Type == "A" || record.Type == "AAAA" {
+						log.Printf("[HTTPS] Resolving %s record: %s -> %s", record.Type, host, record.Value)
+						// Direct A/AAAA record for subdomain
 						return record.Value
 					}
 				}
