@@ -137,6 +137,7 @@ func (ef *ExpressionFilter) Matches(ctx *RequestContext) bool {
 
 	// Replace context variables
 	expr = strings.ReplaceAll(expr, "ip.src", fmt.Sprintf("'%s'", ctx.ClientIP))
+	expr = strings.ReplaceAll(expr, "ip.address", fmt.Sprintf("'%s'", ctx.ClientIP)) // Alias for ip.src
 	expr = strings.ReplaceAll(expr, "ip.country", fmt.Sprintf("'%s'", strings.ToLower(ctx.Country)))
 	expr = strings.ReplaceAll(expr, "ip.asn", fmt.Sprintf("'%s'", strings.ToLower(ctx.ASN)))
 	expr = strings.ReplaceAll(expr, "ip.engine", fmt.Sprintf("'%s'", strings.ToLower(ctx.BrowserType)))
