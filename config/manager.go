@@ -298,21 +298,25 @@ func (cm *ConfigManager) GetDomain(domain string) *Domain {
 		}
 	}
 
-	// If no exact match, check for CNAME records that might resolve this domain
-	// For example, if requesting "dev.defenra.cc", check if any domain has a CNAME record for "dev"
+	// If no exact match, check for subdomain records (CNAME or A records)
+	// For example, if requesting "api.ghost-cheats.com", check if "ghost-cheats.com" has records for "api"
 	parts := strings.Split(domain, ".")
 	if len(parts) >= 2 {
 		subdomain := parts[0]
 		parentDomain := strings.Join(parts[1:], ".")
 
-		// Look for parent domain with CNAME record for this subdomain
+		// Look for parent domain with DNS record for this subdomain
 		for i := range cm.config.Domains {
 			if cm.config.Domains[i].Domain == parentDomain {
-				// Check if this domain has a CNAME record for the subdomain
+				// Check if this domain has any DNS record for the subdomain
 				for _, record := range cm.config.Domains[i].DNSRecords {
-					if record.Type == "CNAME" && record.Name == subdomain {
-						log.Printf("[Config] Found CNAME record: %s.%s -> %s", subdomain, parentDomain, record.Value)
-						// Return the parent domain configuration for CNAME resolution
+					if record.Name == subdomain {
+						if record.Type == "CNAME" {
+							log.Printf("[Config] Found CNAME record: %s.%s -> %s", subdomain, parentDomain, record.Value)
+						} else if record.Type == "A" || record.Type == "AAAA" {
+							log.Printf("[Config] Found %s record: %s.%s -> %s", record.Type, subdomain, parentDomain, record.Value)
+						}
+						// Return the parent domain configuration for subdomain resolution
 						return &cm.config.Domains[i]
 					}
 				}
