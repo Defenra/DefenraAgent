@@ -53,6 +53,9 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 		TLSConfig:    tlsConfig,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+		// Limit max header size to prevent memory exhaustion
+		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
 	log.Fatal(httpsServer.ListenAndServeTLS("", ""))
@@ -785,11 +788,31 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response firewall.ChallengeResponse) {
+	// Set headers
 	for key, value := range response.Headers {
 		w.Header().Set(key, value)
 	}
 	w.WriteHeader(response.StatusCode)
-	w.Write([]byte(response.Body))
+	
+	// Write body with timeout protection
+	// If client is not reading (slow loris attack), this will timeout
+	done := make(chan bool, 1)
+	go func() {
+		w.Write([]byte(response.Body))
+		done <- true
+	}()
+	
+	// Wait max 5 seconds for write to complete
+	select {
+	case <-done:
+		// Write completed successfully
+		return
+	case <-time.After(5 * time.Second):
+		// Write timeout - client not reading
+		// Connection will be closed by HTTP server
+		log.Printf("[HTTPS] Challenge response write timeout - client not reading")
+		return
+	}
 }
 
 func (s *HTTPSProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
