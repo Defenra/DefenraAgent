@@ -11,15 +11,15 @@ type Config struct {
 }
 
 type Domain struct {
-	ID                string                       `json:"id,omitempty"` // MongoDB ObjectId домена
-	Domain            string                       `json:"domain"`
-	DNSRecords        []DNSRecord                  `json:"dnsRecords"`
-	GeoDNSMap         map[string]string            `json:"geoDnsMap"`         // Backward compatibility: location -> best agent IP
-	GeoDNSAgentPools  map[string][]GeoDNSAgentInfo `json:"geoDnsAgentPools"`  // New: location -> array of agents with weights
-	HTTPProxy         HTTPProxy                    `json:"httpProxy"`
-	SSL               SSL                          `json:"ssl"`
-	LuaCode           string                       `json:"luaCode"`
-	PageRules         []PageRule                   `json:"pageRules"`
+	ID               string                       `json:"id,omitempty"` // MongoDB ObjectId домена
+	Domain           string                       `json:"domain"`
+	DNSRecords       []DNSRecord                  `json:"dnsRecords"`
+	GeoDNSMap        map[string]string            `json:"geoDnsMap"`        // Backward compatibility: location -> best agent IP
+	GeoDNSAgentPools map[string][]GeoDNSAgentInfo `json:"geoDnsAgentPools"` // New: location -> array of agents with weights
+	HTTPProxy        HTTPProxy                    `json:"httpProxy"`
+	SSL              SSL                          `json:"ssl"`
+	LuaCode          string                       `json:"luaCode"`
+	PageRules        []PageRule                   `json:"pageRules"`
 }
 
 type GeoDNSAgentInfo struct {

@@ -46,13 +46,13 @@ func (cl *ConnectionLimiter) CheckConnection(remoteAddr string) bool {
 	}
 
 	now := time.Now()
-	
+
 	// Load or create state
 	val, _ := cl.connections.LoadOrStore(ip, &connectionState{
 		lastAccess: now,
 	})
 	state := val.(*connectionState)
-	
+
 	// Lock only this IP's state, not the entire map
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -100,16 +100,16 @@ func (cl *ConnectionLimiter) ReleaseConnection(remoteAddr string) {
 	if !ok {
 		return
 	}
-	
+
 	state := val.(*connectionState)
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	
+
 	if state.count > 0 {
 		state.count--
 	}
 	state.lastAccess = time.Now()
-	
+
 	// Only log every 10th release to reduce spam
 	if state.count%10 == 0 || state.count <= 5 {
 		log.Printf("[CONN] Connection released for IP %s (%d connections remaining)", ip, state.count)
@@ -127,11 +127,11 @@ func (cl *ConnectionLimiter) IsBlocked(remoteAddr string) bool {
 	if !ok {
 		return false
 	}
-	
+
 	state := val.(*connectionState)
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	
+
 	return state.blocked && time.Now().Before(state.blockUntil)
 }
 
@@ -146,11 +146,11 @@ func (cl *ConnectionLimiter) BlockIP(remoteAddr string, duration time.Duration) 
 	val, _ := cl.connections.LoadOrStore(ip, &connectionState{
 		lastAccess: now,
 	})
-	
+
 	state := val.(*connectionState)
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	
+
 	state.blocked = true
 	state.blockUntil = now.Add(duration)
 	log.Printf("[CONN] IP %s manually blocked for %v", ip, duration)
@@ -171,12 +171,12 @@ func (cl *ConnectionLimiter) cleanup() {
 			cl.connections.Range(func(key, value interface{}) bool {
 				ip := key.(string)
 				state := value.(*connectionState)
-				
+
 				state.mu.Lock()
 				shouldRemove := (state.count == 0 && !state.blocked && now.Sub(state.lastAccess) > cl.connectionTimeout) ||
 					(state.blocked && now.After(state.blockUntil) && now.Sub(state.lastAccess) > cl.connectionTimeout)
 				state.mu.Unlock()
-				
+
 				if shouldRemove {
 					toRemove = append(toRemove, ip)
 				}
