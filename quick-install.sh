@@ -202,8 +202,13 @@ else
     print_warning "GeoIP download failed, GeoDNS will not work"
 fi
 
-# Create systemd service
-print_info "Creating systemd service..."
+# Вычисляем 80% от общего объема оперативной памяти (в мегабайтах)
+# free -m выводит данные в MB, берем второе поле (total) из второй строки
+TOTAL_MEM=$(free -m | awk '/^Mem:/{print $2}')
+MEM_LIMIT=$(( TOTAL_MEM * 80 / 100 ))
+
+print_info "Creating systemd service with 80% resource limits..."
+
 cat > /etc/systemd/system/defenra-agent.service << EOF
 [Unit]
 Description=Defenra Agent
@@ -224,22 +229,27 @@ ExecStart=$INSTALL_DIR/defenra-agent
 Restart=always
 RestartSec=10
 
+# Лимиты ресурсов
+CPUQuota=80%
+MemoryMax=${MEM_LIMIT}M
+MemoryHigh=$(( MEM_LIMIT * 90 / 100 ))M
+
+# Безопасность
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=$INSTALL_DIR
-
 LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Enable and start
+# Перезагрузка и запуск
 print_info "Enabling service..."
 systemctl daemon-reload
-systemctl enable defenra-agent
+systemctl enable --now defenra-agent
 
 # Don't auto-start if using placeholder credentials
 if [ "$AGENT_ID" = "agent_change_me" ] || [ "$AGENT_KEY" = "change_me" ]; then
