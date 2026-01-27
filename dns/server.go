@@ -133,6 +133,46 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 	}
 
 	log.Printf("[DNS] GeoDNS Query: %s from %s (location: %s)", domainConfig.Domain, clientIP, clientLocation)
+
+	// Try to use new GeoDNS agent pools first (with load balancing)
+	if domainConfig.GeoDNSAgentPools != nil && len(domainConfig.GeoDNSAgentPools) > 0 {
+		agentPool, ok := domainConfig.GeoDNSAgentPools[clientLocation]
+		if !ok || len(agentPool) == 0 {
+			// Try default pool
+			agentPool, ok = domainConfig.GeoDNSAgentPools["default"]
+		}
+
+		if ok && len(agentPool) > 0 {
+			// Select agent using weighted round-robin
+			selectedAgent := selectAgentByWeight(agentPool, clientIP)
+			log.Printf("[DNS] GeoDNS Pool Response: %s (location: %s) → %s (load: %.1f%%, weight: %d, pool size: %d)",
+				domainConfig.Domain, clientLocation, selectedAgent.IP, selectedAgent.LoadScore, selectedAgent.Weight, len(agentPool))
+
+			parsedIP := net.ParseIP(selectedAgent.IP)
+			if parsedIP == nil {
+				log.Printf("[DNS] ERROR: Invalid IP address in GeoDNS pool: %s", selectedAgent.IP)
+				s.sendNXDOMAIN(w, r)
+				return
+			}
+
+			msg.Answer = append(msg.Answer, &dns.A{
+				Hdr: dns.RR_Header{
+					Name:   r.Question[0].Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    60,
+				},
+				A: parsedIP,
+			})
+
+			if err := w.WriteMsg(msg); err != nil {
+				log.Printf("[DNS] Error writing response: %v", err)
+			}
+			return
+		}
+	}
+
+	// Fallback to old GeoDNS map (single agent per location)
 	log.Printf("[DNS] GeoDNS Map: %+v", domainConfig.GeoDNSMap)
 
 	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
@@ -642,4 +682,58 @@ func (s *DNSServer) GetStats() DNSStats {
 		GeoDNSQueries: atomic.LoadUint64(&s.stats.GeoDNSQueries),
 		NXDomain:      atomic.LoadUint64(&s.stats.NXDomain),
 	}
+}
+
+// selectAgentByWeight selects an agent from pool using weighted round-robin
+// based on client IP for consistent distribution
+func selectAgentByWeight(pool []config.GeoDNSAgentInfo, clientIP string) config.GeoDNSAgentInfo {
+	if len(pool) == 0 {
+		return config.GeoDNSAgentInfo{}
+	}
+
+	if len(pool) == 1 {
+		return pool[0]
+	}
+
+	// Calculate total weight
+	totalWeight := 0
+	for _, agent := range pool {
+		totalWeight += agent.Weight
+	}
+
+	if totalWeight == 0 {
+		// All agents have zero weight - use simple round-robin
+		// Hash client IP to get consistent selection
+		hash := hashString(clientIP)
+		return pool[hash%len(pool)]
+	}
+
+	// Use client IP hash for consistent selection (same client → same agent)
+	// This provides sticky sessions while distributing load
+	hash := hashString(clientIP)
+	selection := hash % totalWeight
+
+	// Select agent based on weight
+	currentWeight := 0
+	for _, agent := range pool {
+		currentWeight += agent.Weight
+		if selection < currentWeight {
+			return agent
+		}
+	}
+
+	// Fallback (should never reach here)
+	return pool[0]
+}
+
+// hashString creates a simple hash from string for consistent distribution
+func hashString(s string) int {
+	hash := 0
+	for i := 0; i < len(s); i++ {
+		hash = hash*31 + int(s[i])
+	}
+	if hash < 0 {
+		hash = -hash
+	}
+	return hash
 }
