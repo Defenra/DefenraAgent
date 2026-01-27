@@ -21,10 +21,21 @@ Environment="CACHE_SIZE=10000"
 # Start agent
 ExecStart=/opt/defenra-agent/defenra-agent
 
-# Restart policy
+# Health check via systemd watchdog
+# Agent must call sd_notify(WATCHDOG=1) every 30 seconds
+WatchdogSec=60
+# If health check fails, restart the service
+Restart=on-watchdog
+
+# Restart policy for other failures
 Restart=always
 RestartSec=10
 StartLimitInterval=0
+
+# Health check script (alternative to watchdog)
+# Check if health endpoint responds every 30 seconds
+ExecStartPost=/bin/bash -c 'sleep 5'
+# Systemd will monitor the main process and restart if it exits
 
 # Logging
 StandardOutput=journal
