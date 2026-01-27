@@ -28,10 +28,11 @@ else
     echo "$FAILURES" > "$FAILURE_COUNT_FILE"
     
     if [ $FAILURES -ge $MAX_FAILURES ]; then
-        # Too many failures - signal systemd to restart
+        # Too many failures - restart service directly
         echo "Health check failed $FAILURES times, restarting service..."
         echo "0" > "$FAILURE_COUNT_FILE"
-        exit 1
+        systemctl restart defenra-agent.service
+        exit 0
     else
         # Not enough failures yet - just log
         echo "Health check failed ($FAILURES/$MAX_FAILURES)"
