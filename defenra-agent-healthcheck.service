@@ -1,0 +1,13 @@
+[Unit]
+Description=Defenra Agent Health Check
+After=defenra-agent.service
+Requires=defenra-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/defenra-agent/defenra-agent-healthcheck.sh
+# If health check fails, restart the main service
+ExecStartPost=/bin/bash -c 'if [ $EXIT_STATUS -ne 0 ]; then systemctl restart defenra-agent.service; fi'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=defenra-agent-healthcheck

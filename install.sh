@@ -517,6 +517,11 @@ install_binary() {
     chown defenra:defenra $INSTALL_DIR/defenra-agent
     chmod 755 $INSTALL_DIR/defenra-agent
     
+    print_info "Copying health check script..."
+    cp defenra-agent-healthcheck.sh $INSTALL_DIR/
+    chown defenra:defenra $INSTALL_DIR/defenra-agent-healthcheck.sh
+    chmod 755 $INSTALL_DIR/defenra-agent-healthcheck.sh
+    
     # Note: Network capabilities are granted via systemd service
     # The service file includes: AmbientCapabilities=CAP_NET_BIND_SERVICE
     print_info "Network capabilities will be granted via systemd service"
@@ -683,6 +688,15 @@ start_service() {
     
     print_info "Enabling service..."
     systemctl enable defenra-agent
+    
+    print_info "Installing health check..."
+    chmod +x "${INSTALL_DIR}/defenra-agent-healthcheck.sh"
+    cp defenra-agent-healthcheck.service /etc/systemd/system/
+    cp defenra-agent-healthcheck.timer /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable defenra-agent-healthcheck.timer
+    systemctl start defenra-agent-healthcheck.timer
+    print_success "Health check timer enabled"
     
     print_info "Starting service..."
     systemctl start defenra-agent
