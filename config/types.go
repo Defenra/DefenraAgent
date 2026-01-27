@@ -11,14 +11,23 @@ type Config struct {
 }
 
 type Domain struct {
-	ID         string            `json:"id,omitempty"` // MongoDB ObjectId домена
-	Domain     string            `json:"domain"`
-	DNSRecords []DNSRecord       `json:"dnsRecords"`
-	GeoDNSMap  map[string]string `json:"geoDnsMap"`
-	HTTPProxy  HTTPProxy         `json:"httpProxy"`
-	SSL        SSL               `json:"ssl"`
-	LuaCode    string            `json:"luaCode"`
-	PageRules  []PageRule        `json:"pageRules"`
+	ID                string                       `json:"id,omitempty"` // MongoDB ObjectId домена
+	Domain            string                       `json:"domain"`
+	DNSRecords        []DNSRecord                  `json:"dnsRecords"`
+	GeoDNSMap         map[string]string            `json:"geoDnsMap"`         // Backward compatibility: location -> best agent IP
+	GeoDNSAgentPools  map[string][]GeoDNSAgentInfo `json:"geoDnsAgentPools"`  // New: location -> array of agents with weights
+	HTTPProxy         HTTPProxy                    `json:"httpProxy"`
+	SSL               SSL                          `json:"ssl"`
+	LuaCode           string                       `json:"luaCode"`
+	PageRules         []PageRule                   `json:"pageRules"`
+}
+
+type GeoDNSAgentInfo struct {
+	IP        string  `json:"ip"`
+	Weight    int     `json:"weight"`    // Weight for load balancing (higher = more traffic)
+	LoadScore float64 `json:"loadScore"` // Current load score (0-100%)
+	AgentID   string  `json:"agentId"`
+	AgentName string  `json:"agentName"`
 }
 
 type DNSRecord struct {
