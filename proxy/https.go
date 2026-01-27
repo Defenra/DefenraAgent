@@ -160,6 +160,39 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 	clientIP := getClientIP(r)
 
+	// === HTTP/2 Direct Connection Attack Protection ===
+	// Block HTTP/2 requests without proper Host/SNI (PRI * requests)
+	// These are malicious attempts to bypass L7 protection
+	if r.Method == "PRI" || (r.Host == "" && r.URL.Host == "") {
+		log.Printf("[HTTPS] HTTP/2 direct connection attack blocked from %s (method=%s, host=%s)", 
+			clientIP, r.Method, r.Host)
+		atomic.AddUint64(&s.stats.BlockedRequests, 1)
+		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
+
+		// Ban IP immediately for HTTP/2 direct connection attacks
+		if s.firewallMgr != nil {
+			if err := s.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+				log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
+			} else {
+				log.Printf("[HTTPS] Banned IP %s for 1 hour (HTTP/2 direct connection attack)", clientIP)
+			}
+		}
+
+		// Close connection immediately without response (save bandwidth)
+		// HTTP/2 attackers don't care about response anyway
+		if hj, ok := w.(http.Hijacker); ok {
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				conn.Close()
+				return
+			}
+		}
+
+		// Fallback: send minimal error response
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
 	// Connection-level protection - check before any processing
 	connLimiter := firewall.GetConnectionLimiter()
 	if !connLimiter.CheckConnection(r.RemoteAddr) {
