@@ -175,8 +175,8 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		ctx := firewall.BuildRequestContext(r, clientIP, country, asn, "", "", "",
 			0, 0, 0, 0, false)
 
-		// Evaluate rules with base suspicion of 0
-		suspicionLevel := ruleEngine.EvaluateRules(ctx, 0)
+		// Evaluate rules with base suspicion of -1 (no match indicator)
+		suspicionLevel := ruleEngine.EvaluateRules(ctx, -1)
 
 		// Handle early allow/block actions
 		if suspicionLevel == 0 {
@@ -194,6 +194,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 			s.sendChallengeResponse(w, response)
 			return
 		}
+		// If suspicionLevel == -1, no rule matched - continue with normal security checks
 	}
 
 	// L7 Anti-DDoS Protection
@@ -486,7 +487,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		if len(parts) >= 2 {
 			subdomain := parts[0]
 			parentDomain := strings.Join(parts[1:], ".")
-			
+
 			// If this is a subdomain request and domain config is for parent
 			if domainConfig.Domain == parentDomain {
 				// Check if the specific subdomain record has HTTP proxy enabled
@@ -499,7 +500,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				}
 			}
 		}
-		
+
 		// If still not enabled, check if any DNS record allows HTTP proxy (fallback)
 		if !httpEnabled {
 			for _, record := range domainConfig.DNSRecords {
