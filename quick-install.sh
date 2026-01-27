@@ -226,6 +226,12 @@ Environment="CORE_URL=$CORE_URL"
 Environment="POLLING_INTERVAL=$POLLING_INTERVAL"
 Environment="LOG_LEVEL=info"
 ExecStart=$INSTALL_DIR/defenra-agent
+
+# Health check via systemd watchdog
+WatchdogSec=60
+Restart=on-watchdog
+
+# Restart policy for other failures
 Restart=always
 RestartSec=10
 
@@ -246,10 +252,79 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
+# Create health check script
+print_info "Creating health check script..."
+cat > "$INSTALL_DIR/defenra-agent-healthcheck.sh" << 'HEALTHCHECK_EOF'
+#!/bin/bash
+HEALTH_URL="http://localhost:8080/health"
+TIMEOUT=5
+MAX_FAILURES=3
+FAILURE_COUNT_FILE="/tmp/defenra-agent-health-failures"
+
+if [ ! -f "$FAILURE_COUNT_FILE" ]; then
+    echo "0" > "$FAILURE_COUNT_FILE"
+fi
+
+FAILURES=$(cat "$FAILURE_COUNT_FILE")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time $TIMEOUT "$HEALTH_URL")
+
+if [ "$HTTP_CODE" = "200" ]; then
+    echo "0" > "$FAILURE_COUNT_FILE"
+    exit 0
+else
+    FAILURES=$((FAILURES + 1))
+    echo "$FAILURES" > "$FAILURE_COUNT_FILE"
+    
+    if [ $FAILURES -ge $MAX_FAILURES ]; then
+        echo "Health check failed $FAILURES times, restarting service..."
+        echo "0" > "$FAILURE_COUNT_FILE"
+        exit 1
+    else
+        exit 0
+    fi
+fi
+HEALTHCHECK_EOF
+
+chmod +x "$INSTALL_DIR/defenra-agent-healthcheck.sh"
+chown defenra:defenra "$INSTALL_DIR/defenra-agent-healthcheck.sh"
+
+# Create health check service
+cat > /etc/systemd/system/defenra-agent-healthcheck.service << EOF
+[Unit]
+Description=Defenra Agent Health Check
+After=defenra-agent.service
+Requires=defenra-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=$INSTALL_DIR/defenra-agent-healthcheck.sh
+ExecStartPost=/bin/bash -c 'if [ \$EXIT_STATUS -ne 0 ]; then systemctl restart defenra-agent.service; fi'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=defenra-agent-healthcheck
+EOF
+
+# Create health check timer
+cat > /etc/systemd/system/defenra-agent-healthcheck.timer << EOF
+[Unit]
+Description=Defenra Agent Health Check Timer
+Requires=defenra-agent.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # Перезагрузка и запуск
-print_info "Enabling service..."
+print_info "Enabling service and health check..."
 systemctl daemon-reload
 systemctl enable --now defenra-agent
+systemctl enable --now defenra-agent-healthcheck.timer
+print_success "Health check timer enabled"
 
 # Don't auto-start if using placeholder credentials
 if [ "$AGENT_ID" = "agent_change_me" ] || [ "$AGENT_KEY" = "change_me" ]; then
@@ -298,6 +373,7 @@ echo "  • Status:  sudo systemctl status defenra-agent"
 echo "  • Logs:    sudo journalctl -u defenra-agent -f"
 echo "  • Restart: sudo systemctl restart defenra-agent"
 echo "  • Health:  curl http://localhost:8080/health"
+echo "  • Health Check: sudo systemctl status defenra-agent-healthcheck.timer"
 echo ""
 
 if [ "$AGENT_ID" != "agent_change_me" ] && [ "$AGENT_KEY" != "change_me" ]; then
