@@ -9,8 +9,7 @@ import (
 
 // ConnectionLimiter provides connection-level rate limiting and protection
 type ConnectionLimiter struct {
-	mu                sync.RWMutex
-	connections       map[string]*connectionState
+	connections       sync.Map // map[string]*connectionState - lock-free
 	maxConnPerIP      int
 	connectionTimeout time.Duration
 	cleanupInterval   time.Duration
@@ -18,6 +17,7 @@ type ConnectionLimiter struct {
 }
 
 type connectionState struct {
+	mu         sync.Mutex
 	count      int
 	lastAccess time.Time
 	blocked    bool
@@ -27,7 +27,7 @@ type connectionState struct {
 // NewConnectionLimiter creates a new connection limiter
 func NewConnectionLimiter(maxConnPerIP int, connectionTimeout time.Duration) *ConnectionLimiter {
 	cl := &ConnectionLimiter{
-		connections:       make(map[string]*connectionState),
+		connections:       sync.Map{},
 		maxConnPerIP:      maxConnPerIP,
 		connectionTimeout: connectionTimeout,
 		cleanupInterval:   30 * time.Second,
@@ -45,22 +45,21 @@ func (cl *ConnectionLimiter) CheckConnection(remoteAddr string) bool {
 		ip = remoteAddr
 	}
 
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-
 	now := time.Now()
-	state, exists := cl.connections[ip]
-	if !exists {
-		state = &connectionState{
-			count:      0,
-			lastAccess: now,
-		}
-		cl.connections[ip] = state
-	}
+	
+	// Load or create state
+	val, _ := cl.connections.LoadOrStore(ip, &connectionState{
+		lastAccess: now,
+	})
+	state := val.(*connectionState)
+	
+	// Lock only this IP's state, not the entire map
+	state.mu.Lock()
+	defer state.mu.Unlock()
 
 	// Check if IP is currently blocked
 	if state.blocked && now.Before(state.blockUntil) {
-		log.Printf("[CONN] Connection blocked: IP %s is temporarily blocked until %v", ip, state.blockUntil)
+		// Don't log every blocked attempt - too much spam
 		return false
 	}
 
@@ -73,18 +72,20 @@ func (cl *ConnectionLimiter) CheckConnection(remoteAddr string) bool {
 
 	// Check connection limit
 	if state.count >= cl.maxConnPerIP {
-		// Block IP for 5 minutes on connection limit exceeded
+		// Block IP for 1 hour on connection limit exceeded (increased from 5 minutes)
 		state.blocked = true
-		state.blockUntil = now.Add(5 * time.Minute)
-		log.Printf("[CONN] Connection limit exceeded for IP %s (%d/%d), blocking for 5 minutes",
+		state.blockUntil = now.Add(1 * time.Hour)
+		log.Printf("[CONN] Connection limit exceeded for IP %s (%d/%d), blocking for 1 hour",
 			ip, state.count, cl.maxConnPerIP)
 		return false
 	}
 
-	// Allow connection
+	// Allow connection - only log every 10th connection to reduce spam
 	state.count++
 	state.lastAccess = now
-	log.Printf("[CONN] Connection allowed for IP %s (%d/%d)", ip, state.count, cl.maxConnPerIP)
+	if state.count%10 == 1 || state.count <= 5 {
+		log.Printf("[CONN] Connection allowed for IP %s (%d/%d)", ip, state.count, cl.maxConnPerIP)
+	}
 	return true
 }
 
@@ -95,14 +96,22 @@ func (cl *ConnectionLimiter) ReleaseConnection(remoteAddr string) {
 		ip = remoteAddr
 	}
 
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-
-	if state, exists := cl.connections[ip]; exists {
-		if state.count > 0 {
-			state.count--
-		}
-		state.lastAccess = time.Now()
+	val, ok := cl.connections.Load(ip)
+	if !ok {
+		return
+	}
+	
+	state := val.(*connectionState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	
+	if state.count > 0 {
+		state.count--
+	}
+	state.lastAccess = time.Now()
+	
+	// Only log every 10th release to reduce spam
+	if state.count%10 == 0 || state.count <= 5 {
 		log.Printf("[CONN] Connection released for IP %s (%d connections remaining)", ip, state.count)
 	}
 }
@@ -114,13 +123,16 @@ func (cl *ConnectionLimiter) IsBlocked(remoteAddr string) bool {
 		ip = remoteAddr
 	}
 
-	cl.mu.RLock()
-	defer cl.mu.RUnlock()
-
-	if state, exists := cl.connections[ip]; exists {
-		return state.blocked && time.Now().Before(state.blockUntil)
+	val, ok := cl.connections.Load(ip)
+	if !ok {
+		return false
 	}
-	return false
+	
+	state := val.(*connectionState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	
+	return state.blocked && time.Now().Before(state.blockUntil)
 }
 
 // BlockIP manually blocks an IP for a specified duration
@@ -130,18 +142,15 @@ func (cl *ConnectionLimiter) BlockIP(remoteAddr string, duration time.Duration) 
 		ip = remoteAddr
 	}
 
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-
 	now := time.Now()
-	state, exists := cl.connections[ip]
-	if !exists {
-		state = &connectionState{
-			lastAccess: now,
-		}
-		cl.connections[ip] = state
-	}
-
+	val, _ := cl.connections.LoadOrStore(ip, &connectionState{
+		lastAccess: now,
+	})
+	
+	state := val.(*connectionState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	
 	state.blocked = true
 	state.blockUntil = now.Add(duration)
 	log.Printf("[CONN] IP %s manually blocked for %v", ip, duration)
@@ -155,26 +164,32 @@ func (cl *ConnectionLimiter) cleanup() {
 	for {
 		select {
 		case <-ticker.C:
-			cl.mu.Lock()
 			now := time.Now()
 			var toRemove []string
 
-			for ip, state := range cl.connections {
-				// Remove if no active connections and not blocked, or if inactive for too long
-				if (state.count == 0 && !state.blocked && now.Sub(state.lastAccess) > cl.connectionTimeout) ||
-					(state.blocked && now.After(state.blockUntil) && now.Sub(state.lastAccess) > cl.connectionTimeout) {
+			// Iterate over sync.Map
+			cl.connections.Range(func(key, value interface{}) bool {
+				ip := key.(string)
+				state := value.(*connectionState)
+				
+				state.mu.Lock()
+				shouldRemove := (state.count == 0 && !state.blocked && now.Sub(state.lastAccess) > cl.connectionTimeout) ||
+					(state.blocked && now.After(state.blockUntil) && now.Sub(state.lastAccess) > cl.connectionTimeout)
+				state.mu.Unlock()
+				
+				if shouldRemove {
 					toRemove = append(toRemove, ip)
 				}
-			}
+				return true
+			})
 
 			for _, ip := range toRemove {
-				delete(cl.connections, ip)
+				cl.connections.Delete(ip)
 			}
 
 			if len(toRemove) > 0 {
 				log.Printf("[CONN] Cleaned up %d inactive connection states", len(toRemove))
 			}
-			cl.mu.Unlock()
 
 		case <-cl.stopChan:
 			return
@@ -184,19 +199,22 @@ func (cl *ConnectionLimiter) cleanup() {
 
 // GetStats returns connection limiter statistics
 func (cl *ConnectionLimiter) GetStats() map[string]interface{} {
-	cl.mu.RLock()
-	defer cl.mu.RUnlock()
-
 	totalConnections := 0
 	blockedIPs := 0
-	activeIPs := len(cl.connections)
+	activeIPs := 0
 
-	for _, state := range cl.connections {
+	now := time.Now()
+	cl.connections.Range(func(key, value interface{}) bool {
+		state := value.(*connectionState)
+		state.mu.Lock()
+		activeIPs++
 		totalConnections += state.count
-		if state.blocked && time.Now().Before(state.blockUntil) {
+		if state.blocked && now.Before(state.blockUntil) {
 			blockedIPs++
 		}
-	}
+		state.mu.Unlock()
+		return true
+	})
 
 	return map[string]interface{}{
 		"active_ips":        activeIPs,
@@ -208,9 +226,6 @@ func (cl *ConnectionLimiter) GetStats() map[string]interface{} {
 
 // UpdateLimits updates the connection limits dynamically
 func (cl *ConnectionLimiter) UpdateLimits(maxConnPerIP int) {
-	cl.mu.Lock()
-	defer cl.mu.Unlock()
-
 	oldLimit := cl.maxConnPerIP
 	cl.maxConnPerIP = maxConnPerIP
 
@@ -221,8 +236,6 @@ func (cl *ConnectionLimiter) UpdateLimits(maxConnPerIP int) {
 
 // GetCurrentLimit returns the current connection limit per IP
 func (cl *ConnectionLimiter) GetCurrentLimit() int {
-	cl.mu.RLock()
-	defer cl.mu.RUnlock()
 	return cl.maxConnPerIP
 }
 

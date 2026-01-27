@@ -104,7 +104,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	// Connection-level protection - check before any processing
 	connLimiter := firewall.GetConnectionLimiter()
 	if !connLimiter.CheckConnection(r.RemoteAddr) {
-		log.Printf("[HTTPS] Connection blocked at connection level for %s", clientIP)
+		// Don't log every blocked connection - too much spam
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
 
