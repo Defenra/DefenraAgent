@@ -215,7 +215,7 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 	sessionManager := GetSessionManager()
 	sessionCookie, err := r.Cookie("__defenra_session")
 	hasValidSession := false
-	
+
 	if err == nil && sessionCookie != nil {
 		log.Printf("[L7] Found session cookie for IP %s: %s", clientIP, sessionCookie.Value)
 		if sessionManager.IsSessionValid(sessionCookie.Value, clientIP, r.UserAgent(), r.Host) {
@@ -479,28 +479,30 @@ func ExtractTLSFingerprint(clientHello *tls.ClientHelloInfo) string {
 		return ""
 	}
 
-	fingerprint := ""
+	// Используем strings.Builder для эффективной конкатенации
+	var b strings.Builder
+	b.Grow(512) // Предварительная аллокация памяти (снижает нагрузку на GC)
 
 	// Skip first cipher suite as it may be randomized
 	for _, suite := range clientHello.CipherSuites[1:] {
-		fingerprint += fmt.Sprintf("0x%x,", suite)
+		fmt.Fprintf(&b, "0x%x,", suite)
 	}
 
 	// Add supported curves (skip first as it may be randomized)
 	if len(clientHello.SupportedCurves) > 1 {
 		for _, curve := range clientHello.SupportedCurves[1:] {
-			fingerprint += fmt.Sprintf("0x%x,", curve)
+			fmt.Fprintf(&b, "0x%x,", curve)
 		}
 	}
 
 	// Add supported points (take only first)
 	if len(clientHello.SupportedPoints) > 0 {
 		for _, point := range clientHello.SupportedPoints[:1] {
-			fingerprint += fmt.Sprintf("0x%x,", point)
+			fmt.Fprintf(&b, "0x%x,", point)
 		}
 	}
 
-	return fingerprint
+	return b.String()
 }
 
 // GetClientIP extracts real client IP from request headers

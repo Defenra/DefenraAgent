@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,7 @@ type HTTPSProxyServer struct {
 	stats       *HTTPStats
 	rateLimiter *RateLimiter
 	firewallMgr *firewall.IPTablesManager
+	certCache   sync.Map // Key: string (domain), Value: *tls.Certificate
 }
 
 func StartHTTPSProxy(configMgr *config.ConfigManager) {
@@ -58,11 +60,45 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
-	log.Fatal(httpsServer.ListenAndServeTLS("", ""))
+	// HTTP/2 Rapid Reset (CVE-2023-44487) protection
+	// Configure HTTP/2 server with limited concurrent streams
+	// Note: Go 1.21.3+ has built-in protection, but explicit limits don't hurt
+	// MaxConcurrentStreams is configured via http2.Server, not http.Server
+	// Default is 250, but we rely on Go's built-in protection (patched in 1.21.3+)
+
+	// === CUSTOM LISTENER WITH L4 FIREWALL ===
+	// Вместо стандартного ListenAndServeTLS используем custom listener
+	// для фильтрации соединений ДО TLS handshake
+
+	// 1. Создаем обычный TCP listener
+	ln, err := net.Listen("tcp", ":443")
+	if err != nil {
+		log.Fatalf("[HTTPS] Failed to create TCP listener: %v", err)
+	}
+
+	log.Println("[HTTPS] TCP listener created on :443")
+
+	// 2. Оборачиваем в FirewallListener для L4 защиты
+	// Лимит: 10000 одновременных соединений (защита от исчерпания FD)
+	guardedLn := firewall.NewFirewallListener(ln, 10000)
+	log.Println("[HTTPS] FirewallListener enabled (max 10000 concurrent connections)")
+
+	// 3. Оборачиваем в TLS listener
+	tlsLn := tls.NewListener(guardedLn, tlsConfig)
+	log.Println("[HTTPS] TLS listener ready with certificate caching")
+
+	// 4. Запускаем HTTPS сервер
+	log.Println("[HTTPS] Starting HTTPS server with L4 firewall protection...")
+	log.Fatal(httpsServer.Serve(tlsLn))
 }
 
 func (s *HTTPSProxyServer) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	// Extract TLS fingerprint for L7 protection
+	// 1. Проверяем кэш первым делом (операция чтения из памяти, наносекунды)
+	if cached, ok := s.certCache.Load(hello.ServerName); ok {
+		return cached.(*tls.Certificate), nil
+	}
+
+	// 2. Extract TLS fingerprint for L7 protection (только при cache miss)
 	tlsFingerprint := firewall.ExtractTLSFingerprint(hello)
 	if tlsFingerprint != "" {
 		// Store fingerprint for this connection
@@ -70,6 +106,7 @@ func (s *HTTPSProxyServer) getCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 		firewall.StoreTLSFingerprint(remoteAddr, tlsFingerprint)
 	}
 
+	// 3. Поиск конфигурации домена
 	domainConfig := s.configMgr.GetDomain(hello.ServerName)
 	if domainConfig == nil {
 		log.Printf("[HTTPS] No config found for domain: %s", hello.ServerName)
@@ -86,17 +123,36 @@ func (s *HTTPSProxyServer) getCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 		return nil, errors.New("certificate or key missing")
 	}
 
+	// 4. Парсинг сертификата (ТЯЖЕЛАЯ операция - только при cache miss)
 	cert, err := tls.X509KeyPair(
 		[]byte(domainConfig.SSL.Certificate),
 		[]byte(domainConfig.SSL.PrivateKey),
 	)
 	if err != nil {
-		log.Printf("[HTTPS] Error loading certificate for %s: %v", hello.ServerName, err)
+		log.Printf("[ERROR] Failed to load certificate for %s: %v", hello.ServerName, err)
 		return nil, err
 	}
 
-	log.Printf("[HTTPS] Certificate loaded for: %s", hello.ServerName)
+	// 5. Сохраняем в кэш и логируем ТОЛЬКО ОДИН РАЗ
+	s.certCache.Store(hello.ServerName, &cert)
+	log.Printf("[HTTPS] Certificate loaded and CACHED for: %s", hello.ServerName)
+
 	return &cert, nil
+}
+
+// ClearCertificateCache очищает кэш сертификатов (вызывается при обновлении конфигурации)
+func (s *HTTPSProxyServer) ClearCertificateCache() {
+	s.certCache.Range(func(key, value interface{}) bool {
+		s.certCache.Delete(key)
+		return true
+	})
+	log.Println("[HTTPS] Certificate cache cleared")
+}
+
+// InvalidateCertificate удаляет конкретный сертификат из кэша
+func (s *HTTPSProxyServer) InvalidateCertificate(domain string) {
+	s.certCache.Delete(domain)
+	log.Printf("[HTTPS] Certificate cache invalidated for: %s", domain)
 }
 
 func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -793,7 +849,7 @@ func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response
 		w.Header().Set(key, value)
 	}
 	w.WriteHeader(response.StatusCode)
-	
+
 	// Write body with timeout protection
 	// If client is not reading (slow loris attack), this will timeout
 	done := make(chan bool, 1)
@@ -801,7 +857,7 @@ func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response
 		w.Write([]byte(response.Body))
 		done <- true
 	}()
-	
+
 	// Wait max 5 seconds for write to complete
 	select {
 	case <-done:

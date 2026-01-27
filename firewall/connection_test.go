@@ -103,12 +103,9 @@ func TestConnectionLimiterCleanup(t *testing.T) {
 	cl.ReleaseConnection(testIP)
 	time.Sleep(200 * time.Millisecond)
 
-	// Force cleanup by checking stats (cleanup runs in background)
-	// In real implementation, cleanup runs periodically
-	// For testing, we'll just verify the connection was released
-	cl.mu.RLock()
-	if state, exists := cl.connections[testIP[:len(testIP)-6]]; exists && state.count > 0 {
+	// Verify connection was released using GetStats
+	stats = cl.GetStats()
+	if totalConns, ok := stats["total_connections"].(int); ok && totalConns > 0 {
 		t.Error("Connection should be released")
 	}
-	cl.mu.RUnlock()
 }

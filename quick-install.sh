@@ -358,6 +358,233 @@ fi
 rm -f "/tmp/${BINARY_NAME}.tar.gz" "/tmp/${BINARY_NAME}"
 
 echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   Configuring DDoS Protection${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+# ============================================================================
+# Step 1: Install Required Packages
+# ============================================================================
+
+print_info "Installing required packages..."
+
+# Detect package manager
+if command -v apt-get &> /dev/null; then
+    PKG_MANAGER="apt-get"
+    UPDATE_CMD="apt-get update -qq"
+    INSTALL_CMD="apt-get install -y -qq"
+elif command -v yum &> /dev/null; then
+    PKG_MANAGER="yum"
+    UPDATE_CMD="yum check-update -q || true"
+    INSTALL_CMD="yum install -y -q"
+elif command -v dnf &> /dev/null; then
+    PKG_MANAGER="dnf"
+    UPDATE_CMD="dnf check-update -q || true"
+    INSTALL_CMD="dnf install -y -q"
+else
+    print_warning "Unknown package manager, skipping package installation"
+    PKG_MANAGER=""
+fi
+
+if [ -n "$PKG_MANAGER" ]; then
+    print_info "Updating package lists..."
+    $UPDATE_CMD > /dev/null 2>&1 || true
+    
+    # Install iptables
+    if ! command -v iptables &> /dev/null; then
+        print_info "Installing iptables..."
+        $INSTALL_CMD iptables > /dev/null 2>&1
+        print_success "iptables installed"
+    else
+        print_success "iptables already installed"
+    fi
+    
+    # Install ipset
+    if ! command -v ipset &> /dev/null; then
+        print_info "Installing ipset..."
+        $INSTALL_CMD ipset > /dev/null 2>&1
+        print_success "ipset installed"
+    else
+        print_success "ipset already installed"
+    fi
+    
+    # Install iptables-persistent (Debian/Ubuntu)
+    if [ "$PKG_MANAGER" = "apt-get" ]; then
+        if ! dpkg -l | grep -q iptables-persistent; then
+            print_info "Installing iptables-persistent..."
+            echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
+            echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
+            $INSTALL_CMD iptables-persistent > /dev/null 2>&1
+            print_success "iptables-persistent installed"
+        else
+            print_success "iptables-persistent already installed"
+        fi
+    fi
+fi
+
+# ============================================================================
+# Step 2: Apply Kernel Tuning (sysctl)
+# ============================================================================
+
+print_info "Applying kernel tuning for DDoS protection..."
+
+cat > /etc/sysctl.d/99-defenra.conf << 'SYSCTL_EOF'
+# Defenra Agent - Kernel Tuning for DDoS Protection
+
+# SYN Flood Protection
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_max_syn_backlog = 40960
+net.core.somaxconn = 65535
+net.ipv4.tcp_synack_retries = 2
+net.ipv4.tcp_syn_retries = 2
+
+# Connection Tracking
+net.netfilter.nf_conntrack_max = 2000000
+net.netfilter.nf_conntrack_tcp_timeout_established = 600
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.netfilter.nf_conntrack_tcp_timeout_close_wait = 30
+
+# TCP Performance
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_tw_reuse = 1
+net.core.rmem_max = 134217728
+net.core.wmem_max = 134217728
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
+net.ipv4.tcp_window_scaling = 1
+
+# Network Stack
+net.core.netdev_max_backlog = 50000
+fs.file-max = 2097152
+
+# Security
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.log_martians = 1
+
+# Memory
+vm.swappiness = 10
+vm.dirty_ratio = 15
+vm.dirty_background_ratio = 5
+SYSCTL_EOF
+
+# Apply sysctl settings
+sysctl -p /etc/sysctl.d/99-defenra.conf > /dev/null 2>&1
+print_success "Kernel tuning applied"
+
+# ============================================================================
+# Step 3: Configure IPSet
+# ============================================================================
+
+if command -v ipset &> /dev/null; then
+    print_info "Configuring ipset for efficient IP blacklisting..."
+    
+    # Create ipset sets
+    BLACKLIST_SET="defenra-blacklist"
+    TEMPBAN_SET="defenra-tempban"
+    CIDR_SET="defenra-cidr"
+    
+    # IPv4 permanent blacklist
+    if ! ipset list "$BLACKLIST_SET" &> /dev/null; then
+        ipset create "$BLACKLIST_SET" hash:ip family inet hashsize 4096 maxelem 1000000 timeout 0 comment 2>/dev/null || true
+        print_success "Created ipset: $BLACKLIST_SET"
+    fi
+    
+    # IPv4 temporary bans (1 hour default timeout)
+    if ! ipset list "$TEMPBAN_SET" &> /dev/null; then
+        ipset create "$TEMPBAN_SET" hash:ip family inet hashsize 4096 maxelem 1000000 timeout 3600 comment 2>/dev/null || true
+        print_success "Created ipset: $TEMPBAN_SET"
+    fi
+    
+    # IPv4 CIDR ranges
+    if ! ipset list "$CIDR_SET" &> /dev/null; then
+        ipset create "$CIDR_SET" hash:net family inet hashsize 1024 maxelem 100000 timeout 0 comment 2>/dev/null || true
+        print_success "Created ipset: $CIDR_SET"
+    fi
+    
+    # Configure iptables rules
+    print_info "Configuring iptables rules..."
+    
+    # Check if rules already exist
+    if ! iptables -C INPUT -m set --match-set "$BLACKLIST_SET" src -j DROP 2>/dev/null; then
+        iptables -I INPUT 1 -m set --match-set "$BLACKLIST_SET" src -j DROP
+        print_success "Added iptables rule for $BLACKLIST_SET"
+    fi
+    
+    if ! iptables -C INPUT -m set --match-set "$TEMPBAN_SET" src -j DROP 2>/dev/null; then
+        iptables -I INPUT 2 -m set --match-set "$TEMPBAN_SET" src -j DROP
+        print_success "Added iptables rule for $TEMPBAN_SET"
+    fi
+    
+    if ! iptables -C INPUT -m set --match-set "$CIDR_SET" src -j DROP 2>/dev/null; then
+        iptables -I INPUT 3 -m set --match-set "$CIDR_SET" src -j DROP
+        print_success "Added iptables rule for $CIDR_SET"
+    fi
+    
+    # Save ipset configuration
+    ipset save > /etc/ipset.conf 2>/dev/null || true
+    
+    # Save iptables rules
+    if [ -d /etc/iptables ]; then
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+        print_success "Saved iptables rules"
+    fi
+    
+    # Create systemd service for ipset restore on boot
+    cat > /etc/systemd/system/ipset-restore.service << 'IPSET_SERVICE_EOF'
+[Unit]
+Description=Restore ipset configuration
+Before=netfilter-persistent.service
+Before=iptables.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ipset restore -f /etc/ipset.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+IPSET_SERVICE_EOF
+    
+    systemctl daemon-reload
+    systemctl enable ipset-restore.service > /dev/null 2>&1
+    print_success "ipset persistence configured"
+    
+else
+    print_warning "ipset not available, skipping ipset configuration"
+fi
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}   DDoS Protection Configured!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "Kernel Tuning:"
+echo "  ✓ SYN cookies enabled"
+echo "  ✓ Connection tracking optimized"
+echo "  ✓ TCP performance tuned"
+echo "  ✓ Network stack hardened"
+echo ""
+if command -v ipset &> /dev/null; then
+    echo "IPSet Configuration:"
+    echo "  ✓ Permanent blacklist: $BLACKLIST_SET"
+    echo "  ✓ Temporary bans: $TEMPBAN_SET (1 hour timeout)"
+    echo "  ✓ CIDR ranges: $CIDR_SET"
+    echo ""
+    echo "Usage Examples:"
+    echo "  • Ban IP:     ipset add $TEMPBAN_SET 1.2.3.4 timeout 3600"
+    echo "  • Unban IP:   ipset del $TEMPBAN_SET 1.2.3.4"
+    echo "  • List bans:  ipset list $TEMPBAN_SET"
+    echo ""
+fi
+
+echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   Installation Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
