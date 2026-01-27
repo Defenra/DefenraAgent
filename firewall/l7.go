@@ -214,12 +214,15 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 	// Check if user has a valid session first
 	sessionManager := GetSessionManager()
 	sessionCookie, err := r.Cookie("__defenra_session")
+	hasValidSession := false
+	
 	if err == nil && sessionCookie != nil {
 		log.Printf("[L7] Found session cookie for IP %s: %s", clientIP, sessionCookie.Value)
 		if sessionManager.IsSessionValid(sessionCookie.Value, clientIP, r.UserAgent(), r.Host) {
 			// Valid session - extend it and allow request
 			sessionManager.ExtendSession(sessionCookie.Value)
 			log.Printf("[L7] Valid session found for IP %s, allowing request", clientIP)
+			hasValidSession = true
 			return 0, "session_valid", nil
 		} else {
 			log.Printf("[L7] Invalid session for IP %s, session ID: %s", clientIP, sessionCookie.Value)
@@ -344,6 +347,14 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 		if suspicionLevel > 4 {
 			suspicionLevel = 4 // Cap at maximum
 		}
+	}
+
+	// CRITICAL: If no valid session exists, require at least Cookie Challenge (suspicion >= 1)
+	// This ensures all first-time visitors get challenged
+	if !hasValidSession && suspicionLevel == 0 {
+		suspicionLevel = 1
+		browserType = "No session - Cookie Challenge required"
+		log.Printf("[L7] No valid session for IP %s, requiring Cookie Challenge", clientIP)
 	}
 
 	return suspicionLevel, browserType, nil
