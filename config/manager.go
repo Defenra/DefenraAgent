@@ -415,23 +415,36 @@ func (cm *ConfigManager) GetAgentIP() string {
 	return ip
 }
 
-// updateConnectionLimits updates the global connection limiter with the highest limit from all domains
+// updateConnectionLimits updates the global connection limiter with the LOWEST limit from all domains
+// This ensures the most restrictive limit is applied for DDoS protection
 func (cm *ConfigManager) updateConnectionLimits() {
-	maxLimit := 100 // Default minimum
+	minLimit := 1000 // Start with high value
+	foundAnyLimit := false
 
-	// Find the highest maxConnections value from all domains
+	// Find the LOWEST maxConnections value from all domains (most restrictive)
 	for _, domain := range cm.config.Domains {
 		if domain.HTTPProxy.AntiDDoS != nil && domain.HTTPProxy.AntiDDoS.Slowloris != nil {
-			if domain.HTTPProxy.AntiDDoS.Slowloris.MaxConnections > maxLimit {
-				maxLimit = domain.HTTPProxy.AntiDDoS.Slowloris.MaxConnections
+			limit := domain.HTTPProxy.AntiDDoS.Slowloris.MaxConnections
+			if limit > 0 { // Only consider positive limits
+				if limit < minLimit {
+					minLimit = limit
+					foundAnyLimit = true
+				}
+				log.Printf("[Config] Domain %s has maxConnections=%d", domain.Domain, limit)
 			}
 		}
 	}
 
-	log.Printf("[Config] Updating connection limits to %d connections per IP", maxLimit)
+	// If no limits found, use default
+	if !foundAnyLimit {
+		minLimit = 100
+		log.Printf("[Config] No connection limits found in domains, using default: %d", minLimit)
+	}
+
+	log.Printf("[Config] Updating connection limits to %d connections per IP (most restrictive)", minLimit)
 
 	// Call the callback if set
 	if cm.connectionLimitUpdater != nil {
-		cm.connectionLimitUpdater(maxLimit)
+		cm.connectionLimitUpdater(minLimit)
 	}
 }
