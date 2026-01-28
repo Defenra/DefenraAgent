@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,8 @@ import (
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
 	"github.com/defenra/agent/waf"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/netutil"
 )
 
 type HTTPSProxyServer struct {
@@ -25,6 +28,24 @@ type HTTPSProxyServer struct {
 	rateLimiter *RateLimiter
 	firewallMgr *firewall.IPTablesManager
 	certCache   sync.Map // Key: string (domain), Value: *tls.Certificate
+}
+
+// TLSErrorFilter фильтрует шумовые ошибки TLS handshake от заблокированных соединений
+// Эти ошибки возникают из-за race condition: FirewallListener закрывает соединение,
+// но TLS layer уже начал читать ClientHello. Это штатная работа защиты, а не баг.
+type TLSErrorFilter struct{}
+
+func (f *TLSErrorFilter) Write(p []byte) (n int, err error) {
+	msg := string(p)
+
+	// Игнорируем EOF ошибки от TLS handshake (заблокированные соединения)
+	if strings.Contains(msg, "http: TLS handshake error") &&
+		(strings.Contains(msg, "EOF") || strings.Contains(msg, "connection reset by peer")) {
+		return len(p), nil // Глотаем шум
+	}
+
+	// Все остальные ошибки (реальные проблемы) пишем в stderr
+	return os.Stderr.Write(p)
 }
 
 func StartHTTPSProxy(configMgr *config.ConfigManager) {
@@ -53,18 +74,34 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 		Addr:         ":443",
 		Handler:      http.HandlerFunc(server.handleRequest),
 		TLSConfig:    tlsConfig,
-		ReadTimeout:  30 * time.Second,
+		// === EDGE-ЗАЩИТА: Адаптивные таймауты ===
+		// ReadHeaderTimeout - критично для Edge: отсекает медленные TLS handshake
+		// Легитимный клиент успеет за 2 секунды, slow-loris бот - нет
+		ReadHeaderTimeout: 2 * time.Second,
+		// ReadTimeout - полное время на чтение запроса (включая тело)
+		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		// IdleTimeout - время между запросами в Keep-Alive соединении
+		IdleTimeout: 30 * time.Second, // Снижено со 120s для Edge
 		// Limit max header size to prevent memory exhaustion
 		MaxHeaderBytes: 1 << 20, // 1 MB
+		// Фильтруем шумовые TLS ошибки от заблокированных соединений
+		ErrorLog: log.New(&TLSErrorFilter{}, "", 0),
 	}
 
-	// HTTP/2 Rapid Reset (CVE-2023-44487) protection
-	// Configure HTTP/2 server with limited concurrent streams
-	// Note: Go 1.21.3+ has built-in protection, but explicit limits don't hurt
-	// MaxConcurrentStreams is configured via http2.Server, not http.Server
-	// Default is 250, but we rely on Go's built-in protection (patched in 1.21.3+)
+	// === EDGE-ЗАЩИТА: HTTP/2 Stream Limiting ===
+	// Защита от HTTP/2 Rapid Reset (CVE-2023-44487) и Stream Exhaustion
+	// Ограничиваем количество одновременных потоков на одно соединение
+	h2Server := &http2.Server{
+		MaxConcurrentStreams: 50, // Не даем одному клиенту плодить тысячи потоков
+		// MaxReadFrameSize по умолчанию 1MB (достаточно)
+		// IdleTimeout наследуется от http.Server
+	}
+	if err := http2.ConfigureServer(httpsServer, h2Server); err != nil {
+		log.Printf("[HTTPS] Warning: failed to configure HTTP/2: %v", err)
+	} else {
+		log.Println("[HTTPS] HTTP/2 configured with MaxConcurrentStreams=50")
+	}
 
 	// === CUSTOM LISTENER WITH L4 FIREWALL ===
 	// Вместо стандартного ListenAndServeTLS используем custom listener
@@ -78,17 +115,28 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 
 	log.Println("[HTTPS] TCP listener created on :443")
 
-	// 2. Оборачиваем в FirewallListener для L4 защиты
-	// Лимит: 10000 одновременных соединений (защита от исчерпания FD)
-	guardedLn := firewall.NewFirewallListener(ln, 10000)
-	log.Println("[HTTPS] FirewallListener enabled (max 10000 concurrent connections)")
+	// 2. === EDGE-ЗАЩИТА: LimitListener (защита от FD exhaustion) ===
+	// Ограничиваем общее количество одновременных соединений
+	// Предотвращает исчерпание файловых дескрипторов и OOM
+	limitedLn := netutil.LimitListener(ln, 10000)
+	log.Println("[HTTPS] LimitListener enabled (max 10000 concurrent connections)")
 
-	// 3. Оборачиваем в TLS listener
+	// 3. Оборачиваем в FirewallListener для L4 защиты (IP filtering)
+	// Проверяет IP в черном списке ДО TLS handshake
+	guardedLn := firewall.NewFirewallListener(limitedLn, 10000)
+	log.Println("[HTTPS] FirewallListener enabled (IP blacklist filtering)")
+
+	// 4. Оборачиваем в TLS listener
 	tlsLn := tls.NewListener(guardedLn, tlsConfig)
 	log.Println("[HTTPS] TLS listener ready with certificate caching")
 
-	// 4. Запускаем HTTPS сервер
-	log.Println("[HTTPS] Starting HTTPS server with L4 firewall protection...")
+	// 5. Запускаем HTTPS сервер
+	log.Println("[HTTPS] Starting HTTPS server with Edge-grade protection:")
+	log.Println("[HTTPS]   - LimitListener: 10000 max connections (FD exhaustion protection)")
+	log.Println("[HTTPS]   - FirewallListener: IP blacklist filtering (pre-TLS)")
+	log.Println("[HTTPS]   - ReadHeaderTimeout: 2s (slow-loris protection)")
+	log.Println("[HTTPS]   - HTTP/2 MaxStreams: 50 (rapid reset protection)")
+	log.Println("[HTTPS]   - TLS 1.2+ only (security)")
 	log.Fatal(httpsServer.Serve(tlsLn))
 }
 
