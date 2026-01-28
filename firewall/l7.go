@@ -350,8 +350,8 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 	}
 
 	// CRITICAL: If no valid session exists, require at least Cookie Challenge (suspicion >= 1)
-	// This ensures all first-time visitors get challenged
-	if !hasValidSession && suspicionLevel == 0 {
+	// This ensures all first-time visitors get challenged, EXCEPT allowed search bots
+	if !hasValidSession && suspicionLevel == 0 && !strings.Contains(browserType, "Allowed bot") {
 		suspicionLevel = 1
 		browserType = "No session - Cookie Challenge required"
 		log.Printf("[L7] No valid session for IP %s, requiring Cookie Challenge", clientIP)

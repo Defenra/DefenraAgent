@@ -289,8 +289,8 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 				// Get agent's own IP address
 				agentIP = s.configMgr.GetAgentIP()
 				if agentIP == "" {
-					log.Printf("[DNS] CNAME Flattening: No agent IP available, falling back to CNAME resolution")
-					// Fall back to regular CNAME processing
+					log.Printf("[DNS] CNAME Flattening: CRITICAL - No agent IP available for proxied domain. Refusing to leak CNAME target.")
+					return
 				} else {
 					log.Printf("[DNS] CNAME Flattening: Using agent's own IP: %s → %s", queryName, agentIP)
 				}
@@ -315,7 +315,8 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 					}
 					return
 				} else {
-					log.Printf("[DNS] CNAME Flattening: Invalid agent IP address: %s, falling back to CNAME", agentIP)
+					log.Printf("[DNS] CNAME Flattening: Invalid agent IP address: %s. Refusing to leak CNAME target.", agentIP)
+					return
 				}
 			}
 		}
@@ -452,8 +453,8 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						// Get agent's own IP address
 						agentIP = s.configMgr.GetAgentIP()
 						if agentIP == "" {
-							log.Printf("[DNS] No agent IP available, falling back to origin IP: %s", record.Value)
-							agentIP = record.Value
+							log.Printf("[DNS] CRITICAL: HTTPProxyEnabled but no Agent IP available. Refusing to leak Origin IP.")
+							continue
 						} else {
 							log.Printf("[DNS] Using agent's own IP for proxied record: %s → %s", queryName, agentIP)
 						}
@@ -462,8 +463,8 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 					// Parse and validate agent IP
 					parsedAgentIP := net.ParseIP(agentIP)
 					if parsedAgentIP == nil {
-						log.Printf("[DNS] Invalid agent IP address: %s, falling back to origin IP: %s", agentIP, record.Value)
-						parsedAgentIP = ip
+						log.Printf("[DNS] CRITICAL: Invalid agent IP address: %s. Refusing to leak Origin IP.", agentIP)
+						continue
 					}
 
 					msg.Answer = append(msg.Answer, &dns.A{
@@ -724,14 +725,14 @@ func selectAgentByWeight(pool []config.GeoDNSAgentInfo, clientIP string) config.
 	if totalWeight == 0 {
 		// All agents have zero weight - use simple round-robin
 		// Hash client IP to get consistent selection
-		hash := hashString(clientIP)
-		return pool[hash%len(pool)]
+		hash := hashFNV1a(clientIP)
+		return pool[int(hash)%len(pool)]
 	}
 
 	// Use client IP hash for consistent selection (same client → same agent)
 	// This provides sticky sessions while distributing load
-	hash := hashString(clientIP)
-	selection := hash % totalWeight
+	hash := hashFNV1a(clientIP)
+	selection := int(hash % uint32(totalWeight))
 
 	// Select agent based on weight
 	currentWeight := 0
@@ -746,14 +747,14 @@ func selectAgentByWeight(pool []config.GeoDNSAgentInfo, clientIP string) config.
 	return pool[0]
 }
 
-// hashString creates a simple hash from string for consistent distribution
-func hashString(s string) int {
-	hash := 0
+// hashFNV1a creates a robust hash from string using FNV-1a algorithm
+func hashFNV1a(s string) uint32 {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	hash := uint32(offset32)
 	for i := 0; i < len(s); i++ {
-		hash = hash*31 + int(s[i])
-	}
-	if hash < 0 {
-		hash = -hash
+		hash ^= uint32(s[i])
+		hash *= prime32
 	}
 	return hash
 }

@@ -4,53 +4,27 @@ import (
 	"testing"
 )
 
-func TestSelectBestAgent_LoadBalancing(t *testing.T) {
+func TestSelectBestAgent_ConsistentHashing(t *testing.T) {
 	tests := []struct {
 		name          string
 		agents        []*DiscoveredAgent
-		expectedAgent string // AgentID of expected selection
+		clientIP      string
 		expectNil     bool
+		expectedAgent string // Optional: if we want to enforce specific selection for an IP
 	}{
-		{
-			name: "select agent with best combined score",
-			agents: []*DiscoveredAgent{
-				{
-					AgentID:      "agent1",
-					HealthScore:  0.6,  // Lower health
-					LoadScore:    20.0, // Low load
-					IsOverloaded: false,
-				},
-				{
-					AgentID:      "agent2",
-					HealthScore:  0.7,  // Medium health
-					LoadScore:    60.0, // Medium load
-					IsOverloaded: false,
-				},
-				{
-					AgentID:      "agent3",
-					HealthScore:  0.8,  // Good health
-					LoadScore:    10.0, // Very low load
-					IsOverloaded: false,
-				},
-			},
-			expectedAgent: "agent3", // Best combined score: good health + very low load
-		},
 		{
 			name: "exclude overloaded agents",
 			agents: []*DiscoveredAgent{
 				{
 					AgentID:      "agent1",
-					HealthScore:  0.9,
-					LoadScore:    85.0, // Overloaded
 					IsOverloaded: true,
 				},
 				{
 					AgentID:      "agent2",
-					HealthScore:  0.7,
-					LoadScore:    30.0, // Normal load
 					IsOverloaded: false,
 				},
 			},
+			clientIP:      "192.168.1.1",
 			expectedAgent: "agent2", // Only non-overloaded agent
 		},
 		{
@@ -58,47 +32,27 @@ func TestSelectBestAgent_LoadBalancing(t *testing.T) {
 			agents: []*DiscoveredAgent{
 				{
 					AgentID:      "agent1",
-					HealthScore:  0.9,
-					LoadScore:    85.0,
 					IsOverloaded: true,
 				},
 				{
 					AgentID:      "agent2",
-					HealthScore:  0.8,
-					LoadScore:    90.0,
 					IsOverloaded: true,
 				},
 			},
+			clientIP:  "192.168.1.1",
 			expectNil: true,
-		},
-		{
-			name: "prefer healthy agent over low-load unhealthy agent",
-			agents: []*DiscoveredAgent{
-				{
-					AgentID:      "agent1",
-					HealthScore:  0.9,  // Very healthy
-					LoadScore:    70.0, // High but not overloaded
-					IsOverloaded: false,
-				},
-				{
-					AgentID:      "agent2",
-					HealthScore:  0.4,  // Less healthy
-					LoadScore:    10.0, // Very low load
-					IsOverloaded: false,
-				},
-			},
-			expectedAgent: "agent1", // Health score has more weight (70%)
 		},
 		{
 			name:      "empty agent list returns nil",
 			agents:    []*DiscoveredAgent{},
+			clientIP:  "192.168.1.1",
 			expectNil: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := selectBestAgent(tt.agents)
+			result := selectBestAgent(tt.agents, tt.clientIP)
 
 			if tt.expectNil {
 				if result != nil {
@@ -112,11 +66,28 @@ func TestSelectBestAgent_LoadBalancing(t *testing.T) {
 				return
 			}
 
-			if result.AgentID != tt.expectedAgent {
+			if tt.expectedAgent != "" && result.AgentID != tt.expectedAgent {
 				t.Errorf("Expected agent %s, got %s", tt.expectedAgent, result.AgentID)
 			}
 		})
 	}
+
+	t.Run("deterministic selection", func(t *testing.T) {
+		agents := []*DiscoveredAgent{
+			{AgentID: "agent1"},
+			{AgentID: "agent2"},
+			{AgentID: "agent3"},
+		}
+		ip := "203.0.113.50"
+		
+		first := selectBestAgent(agents, ip)
+		for i := 0; i < 10; i++ {
+			next := selectBestAgent(agents, ip)
+			if next.AgentID != first.AgentID {
+				t.Errorf("Selection not deterministic! Got %s then %s", first.AgentID, next.AgentID)
+			}
+		}
+	})
 }
 
 func TestGetHealthyAgents_LoadFiltering(t *testing.T) {

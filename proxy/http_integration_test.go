@@ -80,8 +80,8 @@ func TestHTTPProxy_RateLimitFlow(t *testing.T) {
 
 	t.Run("rate limit triggers ban", func(t *testing.T) {
 		// сбрасываем IP если был забанен ранее
-		if err := firewallMgr.UnBanIP(ip); err != nil {
-			t.Logf("UnbanIP error (expected if not root): %v", err, "Test ban")
+		if err := firewallMgr.UnbanIP(ip); err != nil {
+			t.Logf("UnbanIP error (expected if not root): %v", err)
 		}
 		rl.ResetIP(ip)
 

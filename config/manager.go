@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -79,30 +80,48 @@ func (cm *ConfigManager) poll() {
 		return
 	}
 
-	req, err := http.NewRequest("POST", cm.coreURL+"/api/agent/poll", bytes.NewBuffer(jsonData))
-	if err != nil {
-		log.Printf("[Poll] Error creating request: %v", err)
-		cm.recordFailedPoll()
-		return
+	var resp *http.Response
+	var reqErr error
+	maxRetries := 3
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			log.Printf("[Poll] Retrying in 5 seconds (attempt %d/%d)...", attempt, maxRetries)
+			time.Sleep(5 * time.Second)
+		}
+
+		// Re-create request for each attempt because Body is consumed
+		req, err := http.NewRequest("POST", cm.coreURL+"/api/agent/poll", bytes.NewBuffer(jsonData))
+		if err != nil {
+			log.Printf("[Poll] Error creating request: %v", err)
+			cm.recordFailedPoll()
+			return
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+cm.agentKey)
+
+		resp, reqErr = cm.client.Do(req)
+		if reqErr == nil {
+			if resp.StatusCode == http.StatusOK {
+				// Success!
+				break
+			}
+			// Server returned error status
+			body, _ := io.ReadAll(resp.Body)
+			log.Printf("[Poll] Error response (status %d): %s", resp.StatusCode, string(body))
+			resp.Body.Close()
+			reqErr = fmt.Errorf("status %d", resp.StatusCode)
+		} else {
+			log.Printf("[Poll] Error making request: %v", reqErr)
+		}
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cm.agentKey)
-
-	resp, err := cm.client.Do(req)
-	if err != nil {
-		log.Printf("[Poll] Error making request: %v", err)
+	if reqErr != nil {
 		cm.recordFailedPoll()
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[Poll] Error response (status %d): %s", resp.StatusCode, string(body))
-		cm.recordFailedPoll()
-		return
-	}
 
 	var pollResp PollResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err != nil {
