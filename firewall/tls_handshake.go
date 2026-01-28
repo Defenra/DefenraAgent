@@ -22,10 +22,10 @@ type HandshakeRateLimiter struct {
 }
 
 type handshakeCounter struct {
-	count      int
+	count       int
 	windowStart time.Time
-	blocked    bool
-	blockUntil time.Time
+	blocked     bool
+	blockUntil  time.Time
 }
 
 var globalHandshakeLimiter *HandshakeRateLimiter
@@ -36,9 +36,9 @@ func GetHandshakeRateLimiter() *HandshakeRateLimiter {
 	globalHandshakeLimiterOnce.Do(func() {
 		limiter := &HandshakeRateLimiter{
 			handshakes:    make(map[string]*handshakeCounter),
-			maxRate:       15,                // 15 handshake/sec (легитимный браузер делает 1-3)
-			burstSize:     20,                // Burst до 20 (для CDN/load balancer)
-			cleanInterval: 60 * time.Second,  // Очистка каждую минуту
+			maxRate:       15,               // 15 handshake/sec (легитимный браузер делает 1-3)
+			burstSize:     20,               // Burst до 20 (для CDN/load balancer)
+			cleanInterval: 60 * time.Second, // Очистка каждую минуту
 			stopChan:      make(chan struct{}),
 		}
 		go limiter.cleanup()
@@ -96,19 +96,19 @@ func (h *HandshakeRateLimiter) AllowHandshake(ip string) bool {
 		counter.blocked = true
 		counter.blockUntil = now.Add(5 * time.Minute)
 		log.Printf("[TLS-Handshake] IP %s blocked for 5 minutes (handshake flood: %d/sec)", ip, counter.count)
-		
+
 		// Добавляем в iptables для kernel-level блокировки
 		firewallMgr := GetIPTablesManager()
 		if firewallMgr != nil {
 			go firewallMgr.BanIP(ip, 5*time.Minute)
 		}
-		
+
 		return false
 	}
 
 	if counter.count > h.maxRate {
 		// Превышен rate limit, но в пределах burst
-		log.Printf("[TLS-Handshake] IP %s exceeding rate limit (%d/%d handshakes/sec)", 
+		log.Printf("[TLS-Handshake] IP %s exceeding rate limit (%d/%d handshakes/sec)",
 			ip, counter.count, h.maxRate)
 		return false
 	}
@@ -201,25 +201,31 @@ func ValidateSNI(serverName string, configuredDomains []string) error {
 	// Проверка 3: SNI должен быть в списке настроенных доменов
 	if len(configuredDomains) == 0 {
 		// Если домены не настроены, пропускаем проверку
+		// getCertificate сам решит, есть ли сертификат для этого домена
 		return nil
 	}
 
+	// Нормализуем serverName (lowercase для сравнения)
+	serverNameLower := strings.ToLower(serverName)
+
 	for _, domain := range configuredDomains {
-		// Точное совпадение
-		if serverName == domain {
+		domainLower := strings.ToLower(domain)
+
+		// Точное совпадение (case-insensitive)
+		if serverNameLower == domainLower {
 			return nil
 		}
 
 		// Wildcard совпадение (*.example.com)
-		if strings.HasPrefix(domain, "*.") {
-			baseDomain := domain[2:] // Убираем "*."
-			if strings.HasSuffix(serverName, "."+baseDomain) || serverName == baseDomain {
+		if strings.HasPrefix(domainLower, "*.") {
+			baseDomain := domainLower[2:] // Убираем "*."
+			if strings.HasSuffix(serverNameLower, "."+baseDomain) || serverNameLower == baseDomain {
 				return nil
 			}
 		}
 
 		// Subdomain совпадение (example.com покрывает *.example.com)
-		if strings.HasSuffix(serverName, "."+domain) {
+		if strings.HasSuffix(serverNameLower, "."+domainLower) {
 			return nil
 		}
 	}
@@ -250,7 +256,7 @@ func GetConfigForClientWrapper(
 	configuredDomains []string,
 	getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error),
 ) func(*tls.ClientHelloInfo) (*tls.Config, error) {
-	
+
 	handshakeLimiter := GetHandshakeRateLimiter()
 	firewallMgr := GetIPTablesManager()
 
@@ -260,14 +266,26 @@ func GetConfigForClientWrapper(
 		// === FORTRESS LAYER 1: SNI Validation (Cheap Check) ===
 		// Отсекаем сканеры и боты без валидного SNI
 		if err := ValidateSNI(hello.ServerName, configuredDomains); err != nil {
-			log.Printf("[TLS-Fortress] Blocked handshake from %s: %v (SNI: %s)", 
-				ip, err, hello.ServerName)
-			
-			// Offloading: блокируем в iptables для kernel-level защиты
-			if firewallMgr != nil {
-				go firewallMgr.BanIP(ip, 1*time.Hour)
+			// Логируем с указанием настроенных доменов для отладки
+			log.Printf("[TLS-Fortress] Blocked handshake from %s: %v (SNI: %s, configured domains: %d)",
+				ip, err, hello.ServerName, len(configuredDomains))
+
+			// ВАЖНО: НЕ банить сразу - возможно домен есть, но не в списке
+			// getCertificate сам решит, есть ли сертификат
+			// Банить только явные атаки (пустой SNI, IP-адрес)
+			if err.Error() == "empty SNI" || err.Error() == "SNI is IP address" {
+				// Это явная атака - банить
+				if firewallMgr != nil {
+					go firewallMgr.BanIP(ip, 1*time.Hour)
+				}
+			} else {
+				// "SNI not in configured domains" - возможно домен есть, но не синхронизирован
+				// Логируем для отладки, но не банить
+				log.Printf("[TLS-Fortress] SNI %s not in configured domains list, but allowing getCertificate to decide", hello.ServerName)
+				// Продолжаем - getCertificate вернет ошибку, если сертификата нет
+				return nil, nil
 			}
-			
+
 			return nil, errors.New("invalid SNI")
 		}
 
@@ -275,7 +293,7 @@ func GetConfigForClientWrapper(
 		// Защита от быстрых подключений-отключений
 		if !handshakeLimiter.AllowHandshake(ip) {
 			log.Printf("[TLS-Fortress] Blocked handshake from %s: rate limit exceeded", ip)
-			
+
 			// IP уже заблокирован в iptables внутри AllowHandshake
 			return nil, errors.New("handshake rate limit exceeded")
 		}
@@ -286,13 +304,13 @@ func GetConfigForClientWrapper(
 		if tlsFingerprint != "" {
 			// Проверяем fingerprint против базы известных ботнетов
 			if IsKnownBotFingerprint(tlsFingerprint) {
-				log.Printf("[TLS-Fortress] Blocked handshake from %s: known bot fingerprint %s", 
+				log.Printf("[TLS-Fortress] Blocked handshake from %s: known bot fingerprint %s",
 					ip, tlsFingerprint)
-				
+
 				if firewallMgr != nil {
 					go firewallMgr.BanIP(ip, 24*time.Hour)
 				}
-				
+
 				return nil, errors.New("malicious TLS fingerprint")
 			}
 
@@ -311,7 +329,7 @@ func GetConfigForClientWrapper(
 func IsKnownBotFingerprint(fingerprint string) bool {
 	// Получаем базу известных bot fingerprints
 	botFingerprints := GetBotFingerprints()
-	
+
 	if description, exists := botFingerprints[fingerprint]; exists {
 		log.Printf("[TLS-Fortress] Detected bot fingerprint: %s (%s)", fingerprint, description)
 		return true

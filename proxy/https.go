@@ -84,9 +84,9 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 	}
 
 	httpsServer := &http.Server{
-		Addr:         ":443",
-		Handler:      http.HandlerFunc(server.handleRequest),
-		TLSConfig:    tlsConfig,
+		Addr:      ":443",
+		Handler:   http.HandlerFunc(server.handleRequest),
+		TLSConfig: tlsConfig,
 		// === EDGE-ЗАЩИТА: Адаптивные таймауты ===
 		// ReadHeaderTimeout - критично для Edge: отсекает медленные TLS handshake
 		// Легитимный клиент успеет за 2 секунды, slow-loris бот - нет
@@ -226,7 +226,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	// Block HTTP/2 requests without proper Host/SNI (PRI * requests)
 	// These are malicious attempts to bypass L7 protection
 	if r.Method == "PRI" || (r.Host == "" && r.URL.Host == "") {
-		log.Printf("[HTTPS] HTTP/2 direct connection attack blocked from %s (method=%s, host=%s)", 
+		log.Printf("[HTTPS] HTTP/2 direct connection attack blocked from %s (method=%s, host=%s)",
 			clientIP, r.Method, r.Host)
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
@@ -434,7 +434,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 			// === FORTRESS OFFLOADING: Инициализация tracker ===
 			offloadingTracker := firewall.GetChallengeOffloadingTracker()
-			
+
 			// Обновляем конфигурацию offloading из настроек домена
 			if challengeSettings.AutoOffloading != nil {
 				offloadingTracker.UpdateConfig(
@@ -451,7 +451,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				if challengeSettings.CookieChallenge != nil && challengeSettings.CookieChallenge.Enabled {
 					if !challengeMgr.ValidateCookieChallenge(r, clientIP) {
 						l7Protection.RecordChallengeFailure(clientIP)
-						
+
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "cookie") {
 							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated cookie challenge failures)", clientIP)
@@ -459,7 +459,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 							// IP уже заблокирован в iptables, просто закрываем соединение
 							return
 						}
-						
+
 						response := challengeMgr.IssueCookieChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
 						return
@@ -468,7 +468,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 						http.SetCookie(w, sessionCookie)
-						
+
 						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
 						offloadingTracker.ResetIP(clientIP)
 						// Continue processing the request
@@ -479,14 +479,14 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				if challengeSettings.JSChallenge != nil && challengeSettings.JSChallenge.Enabled {
 					if !challengeMgr.ValidateJSChallenge(r, challengeSettings.JSChallenge.Difficulty) {
 						l7Protection.RecordChallengeFailure(clientIP)
-						
+
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "js_pow") {
 							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated JS PoW challenge failures)", clientIP)
 							atomic.AddUint64(&s.stats.BlockedRequests, 1)
 							return
 						}
-						
+
 						response := challengeMgr.IssueJSChallenge(w, r, clientIP, challengeSettings.JSChallenge.Difficulty)
 						s.sendChallengeResponse(w, response)
 						return
@@ -534,14 +534,14 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				if challengeSettings.CaptchaChallenge != nil && challengeSettings.CaptchaChallenge.Enabled {
 					if !challengeMgr.ValidateCaptchaChallenge(r) {
 						l7Protection.RecordChallengeFailure(clientIP)
-						
+
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "captcha") {
 							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated CAPTCHA challenge failures)", clientIP)
 							atomic.AddUint64(&s.stats.BlockedRequests, 1)
 							return
 						}
-						
+
 						response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
 						return
