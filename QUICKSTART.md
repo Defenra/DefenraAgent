@@ -89,7 +89,7 @@ go build -o defenra-agent .
 
 ```bash
 wget -O GeoLite2-City.mmdb \
-  https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+  https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb
 ```
 
 ### 4. Configure

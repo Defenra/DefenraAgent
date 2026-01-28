@@ -54,7 +54,7 @@ if [ ! -f "GeoLite2-City.mmdb" ]; then
     echo ""
     echo "Downloading GeoIP database..."
     wget -q --show-progress -O GeoLite2-City.mmdb \
-        https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+        https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb
     echo "✓ GeoIP database downloaded"
 else
     echo "✓ GeoIP database exists"
