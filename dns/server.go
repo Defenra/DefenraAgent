@@ -612,6 +612,7 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 	}
 
 	// Try hardcoded fallback locations (legacy)
+	// Note: Political restrictions applied (UA clients won't route to RU)
 	fallbackLocations := map[string][]string{
 		"us": {"ca", "mx", "gb", "de"},
 		"ca": {"us", "mx", "gb", "de"},
@@ -626,9 +627,11 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		"it": {"fr", "de", "es", "tr"},
 		"es": {"fr", "it", "br", "mx"},
 		"nl": {"de", "gb", "fr", "pl"},
-		"pl": {"de", "ua", "ru", "nl"},
-		"ua": {"pl", "ru", "tr", "de"},
-		"ru": {"ua", "pl", "kz", "cn"},
+		"pl": {"de", "ua", "cz", "nl"}, // Poland: avoid RU
+		"ua": {"pl", "de", "tr", "ro"}, // Ukraine: NEVER route to RU
+		"ru": {"kz", "by", "fi", "tr"}, // Russia: prefer nearby (KZ, BY), avoid UA
+		"by": {"ru", "pl", "ua", "lt"}, // Belarus
+		"kz": {"ru", "uz", "cn", "tr"}, // Kazakhstan
 		"cn": {"jp", "kr", "sg", "in"},
 		"jp": {"kr", "cn", "sg", "au"},
 		"kr": {"jp", "cn", "sg", "au"},
@@ -644,7 +647,6 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		"ae": {"ir", "tr", "in", "eg"},
 		"tr": {"ae", "ir", "eg", "it"},
 		"ir": {"ae", "tr", "kz", "in"},
-		"kz": {"ru", "cn", "ir", "tr"},
 		"cz": {"de", "pl", "at", "sk"}, // Czech Republic -> Germany, Poland, Austria, Slovakia
 		"at": {"de", "cz", "it", "ch"}, // Austria -> Germany, Czech, Italy, Switzerland
 		"sk": {"cz", "pl", "hu", "at"}, // Slovakia -> Czech, Poland, Hungary, Austria
