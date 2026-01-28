@@ -159,7 +159,9 @@ func PerformUpdate(currentVersion string) error {
 	// Copy new binary
 	if err := copyFile(extractedBinary, currentExe); err != nil {
 		// Restore backup on failure
-		os.Rename(backupPath, currentExe)
+		if restoreErr := os.Rename(backupPath, currentExe); restoreErr != nil {
+			fmt.Printf("CRITICAL: Failed to restore backup: %v\n", restoreErr)
+		}
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 
@@ -167,7 +169,9 @@ func PerformUpdate(currentVersion string) error {
 	if err := os.Chmod(currentExe, 0755); err != nil {
 		// Restore backup on failure
 		os.Remove(currentExe)
-		os.Rename(backupPath, currentExe)
+		if restoreErr := os.Rename(backupPath, currentExe); restoreErr != nil {
+			fmt.Printf("CRITICAL: Failed to restore backup: %v\n", restoreErr)
+		}
 		return fmt.Errorf("failed to set executable permissions: %w", err)
 	}
 

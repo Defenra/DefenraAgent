@@ -100,7 +100,11 @@ func (h *HandshakeRateLimiter) AllowHandshake(ip string) bool {
 		// Добавляем в iptables для kernel-level блокировки
 		firewallMgr := GetIPTablesManager()
 		if firewallMgr != nil {
-			go firewallMgr.BanIP(ip, 5*time.Minute, "TLS handshake flood")
+			go func() {
+				if err := firewallMgr.BanIP(ip, 5*time.Minute, "TLS handshake flood"); err != nil {
+					log.Printf("[TLS-Handshake] Failed to ban IP %s: %v", ip, err)
+				}
+			}()
 		}
 
 		return false
@@ -276,7 +280,11 @@ func GetConfigForClientWrapper(
 			if err.Error() == "empty SNI" || err.Error() == "SNI is IP address" {
 				// Это явная атака - банить
 				if firewallMgr != nil {
-					go firewallMgr.BanIP(ip, 1*time.Hour, "Invalid SNI (empty or IP address)")
+					go func() {
+						if err := firewallMgr.BanIP(ip, 1*time.Hour, "Invalid SNI (empty or IP address)"); err != nil {
+							log.Printf("[TLS-Fortress] Failed to ban IP %s: %v", ip, err)
+						}
+					}()
 				}
 			} else {
 				// "SNI not in configured domains" - возможно домен есть, но не синхронизирован
@@ -308,7 +316,11 @@ func GetConfigForClientWrapper(
 					ip, tlsFingerprint)
 
 				if firewallMgr != nil {
-					go firewallMgr.BanIP(ip, 24*time.Hour, "Malicious TLS fingerprint")
+					go func() {
+						if err := firewallMgr.BanIP(ip, 24*time.Hour, "Malicious TLS fingerprint"); err != nil {
+							log.Printf("[TLS-Fortress] Failed to ban IP %s: %v", ip, err)
+						}
+					}()
 				}
 
 				return nil, errors.New("malicious TLS fingerprint")

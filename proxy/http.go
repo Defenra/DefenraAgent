@@ -182,7 +182,9 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 			ruleEngine := firewall.NewRuleEngine()
 			for _, rule := range domainConfig.HTTPProxy.AntiDDoS.CustomRules {
 				if rule.Enabled {
-					ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled)
+					if err := ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled); err != nil {
+						log.Printf("[HTTP] Failed to add custom rule %s: %v", rule.Name, err)
+					}
 				}
 			}
 
@@ -677,7 +679,9 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 			w.Header().Set(key, value)
 		}
 		w.WriteHeader(errorResponse.StatusCode)
-		w.Write([]byte(errorResponse.Body))
+		if _, err := w.Write([]byte(errorResponse.Body)); err != nil {
+			log.Printf("[HTTP] Error writing error response: %v", err)
+		}
 
 		atomic.AddUint64(&s.stats.ProxyErrors, 1)
 		return
@@ -781,7 +785,9 @@ func (s *HTTPProxyServer) sendChallengeResponse(w http.ResponseWriter, response 
 		w.Header().Set(key, value)
 	}
 	w.WriteHeader(response.StatusCode)
-	w.Write([]byte(response.Body))
+	if _, err := w.Write([]byte(response.Body)); err != nil {
+		log.Printf("[HTTP] Error writing challenge response: %v", err)
+	}
 }
 
 func (s *HTTPProxyServer) GetStats() HTTPStats {

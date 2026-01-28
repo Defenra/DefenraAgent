@@ -135,7 +135,7 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 	log.Printf("[DNS] GeoDNS Query: %s from %s (location: %s)", domainConfig.Domain, clientIP, clientLocation)
 
 	// Try to use new GeoDNS agent pools first (with load balancing)
-	if domainConfig.GeoDNSAgentPools != nil && len(domainConfig.GeoDNSAgentPools) > 0 {
+	if len(domainConfig.GeoDNSAgentPools) > 0 {
 		agentPool, ok := domainConfig.GeoDNSAgentPools[clientLocation]
 		if !ok || len(agentPool) == 0 {
 			// Try default pool
@@ -174,7 +174,7 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 
 	// Fallback to old GeoDNS map (single agent per location)
 	log.Printf("[DNS] GeoDNS Map: %+v", domainConfig.GeoDNSMap)
-	if domainConfig.GeoDnsFallbackMap != nil && len(domainConfig.GeoDnsFallbackMap) > 0 {
+	if len(domainConfig.GeoDnsFallbackMap) > 0 {
 		log.Printf("[DNS] GeoDNS Fallback Map: %+v", domainConfig.GeoDnsFallbackMap)
 	}
 

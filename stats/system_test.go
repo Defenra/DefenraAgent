@@ -119,13 +119,8 @@ func TestSystemMetricsCollectorCrossplatform(t *testing.T) {
 			t.Error("CPU usage should not be negative on non-Linux systems")
 		}
 
-		if metrics.DiskReadBytesPS < 0 || metrics.DiskWriteBytesPS < 0 {
-			t.Error("Disk I/O should not be negative on non-Linux systems")
-		}
+		// uint64 cannot be negative, so we skip checking DiskReadBytesPS/etc < 0
 
-		if metrics.NetworkRxBytesPS < 0 || metrics.NetworkTxBytesPS < 0 {
-			t.Error("Network I/O should not be negative on non-Linux systems")
-		}
 	}
 }
 

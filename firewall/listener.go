@@ -111,9 +111,5 @@ func IsIPAllowed(ip string) bool {
 
 	// Проверка в connection limiter
 	connLimiter := GetConnectionLimiter()
-	if connLimiter.IsBlocked(ip) {
-		return false
-	}
-
-	return true
+	return !connLimiter.IsBlocked(ip)
 }
