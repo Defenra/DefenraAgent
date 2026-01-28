@@ -72,6 +72,7 @@ func NewChallengeManager() *ChallengeManager {
 	templatePaths := []string{
 		"assets/html/challenge_template.html",
 		"./assets/html/challenge_template.html",
+		"DefenraAgent/assets/html/challenge_template.html",
 		"/opt/defenra-agent/assets/html/challenge_template.html",
 		"/usr/local/bin/assets/html/challenge_template.html",
 	}

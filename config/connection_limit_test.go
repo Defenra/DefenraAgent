@@ -54,13 +54,13 @@ func TestConfigManagerConnectionLimitCallback(t *testing.T) {
 	// Call updateConnectionLimits
 	cm.updateConnectionLimits()
 
-	// Verify callback was called with the highest limit
+	// Verify callback was called with the lowest (most restrictive) limit
 	if !callbackCalled {
 		t.Error("Connection limit callback was not called")
 	}
 
-	if receivedLimit != 1000 {
-		t.Errorf("Expected callback to receive limit 1000, got %d", receivedLimit)
+	if receivedLimit != 200 {
+		t.Errorf("Expected callback to receive limit 200 (lowest), got %d", receivedLimit)
 	}
 
 	// Test with no AntiDDoS config (should use default)

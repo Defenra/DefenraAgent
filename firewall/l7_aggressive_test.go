@@ -79,7 +79,7 @@ func TestAggressiveL7Protection(t *testing.T) {
 		t.Errorf("Short User-Agent should be blocked immediately, suspicion: %d, reason: %s", suspicion3, reason3)
 	}
 
-	// Test 4: Normal browser should be allowed
+	// Test 4: Normal browser should be allowed but challenged (suspicion 1 for new session)
 	req4, _ := http.NewRequest("GET", "http://example.com/", nil)
 	req4.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 	req4.RemoteAddr = testIP + ":12348"
@@ -89,8 +89,8 @@ func TestAggressiveL7Protection(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err4)
 	}
 
-	if suspicion4 > 1 {
-		t.Errorf("Normal browser should have low suspicion, got %d, reason: %s", suspicion4, reason4)
+	if suspicion4 != 1 {
+		t.Errorf("Normal browser without session should have suspicion 1, got %d, reason: %s", suspicion4, reason4)
 	}
 
 	// Test 5: Allowed bot should be allowed

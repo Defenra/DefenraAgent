@@ -13,6 +13,7 @@ import (
 	"github.com/defenra/agent/proxy"
 	"github.com/defenra/agent/stats"
 	"github.com/defenra/agent/updater"
+	"github.com/defenra/agent/utils"
 )
 
 func main() {
@@ -58,29 +59,41 @@ func main() {
 		connLimiter.UpdateLimits(maxConnPerIP)
 	})
 
-	go configMgr.StartPolling(time.Duration(pollingInterval) * time.Second)
+	utils.SafeGo(func() {
+		configMgr.StartPolling(time.Duration(pollingInterval) * time.Second)
+	}, "ConfigPolling")
 
 	log.Println("Waiting for initial configuration...")
 	time.Sleep(2 * time.Second)
 
 	log.Println("Starting DNS Server on :53...")
-	go dns.StartDNSServer(configMgr)
+	utils.SafeGo(func() {
+		dns.StartDNSServer(configMgr)
+	}, "DNSServer")
 
 	log.Println("Starting HTTP Proxy on :80...")
-	go proxy.StartHTTPProxy(configMgr)
+	utils.SafeGo(func() {
+		proxy.StartHTTPProxy(configMgr)
+	}, "HTTPProxy")
 
 	log.Println("Starting HTTPS Proxy on :443...")
-	go proxy.StartHTTPSProxy(configMgr)
+	utils.SafeGo(func() {
+		proxy.StartHTTPSProxy(configMgr)
+	}, "HTTPSProxy")
 
 	log.Println("Starting TCP/UDP Proxy Manager...")
-	go proxy.StartProxyManager(configMgr)
+	utils.SafeGo(func() {
+		proxy.StartProxyManager(configMgr)
+	}, "ProxyManager")
 
 	// Initialize firewall manager for health checks (avoid circular imports)
 	firewallMgr := firewall.GetIPTablesManager()
 	health.SetFirewallManager(firewallMgr)
 
 	log.Println("Starting Health Check on :8080...")
-	go health.StartHealthCheck(configMgr)
+	utils.SafeGo(func() {
+		health.StartHealthCheck(configMgr)
+	}, "HealthCheck")
 
 	// Initialize HTTP client provider for health checks
 	proxy.InitHTTPClientProvider()
@@ -102,7 +115,7 @@ func main() {
 	statsCollector.SendStatistics()
 
 	// запускаем отправку статистики каждые 2 минуты (более частая отправка)
-	go func() {
+	utils.SafeGo(func() {
 		ticker := time.NewTicker(2 * time.Minute)
 		defer ticker.Stop()
 
@@ -117,10 +130,10 @@ func main() {
 			log.Println("[Stats] Sending periodic statistics...")
 			statsCollector.SendStatistics()
 		}
-	}()
+	}, "StatsCollector")
 
 	// запускаем отправку данных о клиентах каждые 1 минуту (более частая отправка)
-	go func() {
+	utils.SafeGo(func() {
 		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 
@@ -135,7 +148,7 @@ func main() {
 			log.Println("[Stats] Sending periodic client data...")
 			statsCollector.SendClientData()
 		}
-	}()
+	}, "ClientDataCollector")
 
 	log.Println("Defenra Agent started successfully")
 

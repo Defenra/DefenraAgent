@@ -922,9 +922,36 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	client := createHTTPClient(encryptionMode)
 
 	startTime := time.Now()
-	resp, err := client.Do(proxyReq)
-	if err != nil {
-		log.Printf("[HTTPS] Error proxying request: %v", err)
+
+	var resp *http.Response
+	var reqErr error
+
+	// Retry loop for resilience against network spikes
+	// Only retry for idempotent requests or those without body to avoid data corruption/rewind issues
+	maxRetries := 3
+	canRetry := r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" || r.ContentLength == 0
+
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			// Exponential backoff: 50ms, 100ms, 200ms
+			time.Sleep(time.Duration(50*(1<<uint(i-1))) * time.Millisecond)
+		}
+
+		resp, reqErr = client.Do(proxyReq)
+		if reqErr == nil {
+			break
+		}
+
+		if !canRetry {
+			log.Printf("[HTTPS] Cannot retry %s request with body after error: %v", r.Method, reqErr)
+			break
+		}
+
+		log.Printf("[HTTPS] Proxy request failed (attempt %d/%d): %v", i+1, maxRetries, reqErr)
+	}
+
+	if reqErr != nil {
+		log.Printf("[HTTPS] Error proxying request: %v", reqErr)
 
 		// Use new error page template for origin server errors
 		challengeMgr := firewall.GetChallengeManager()
@@ -943,6 +970,11 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	defer resp.Body.Close()
 
 	for key, values := range resp.Header {
+		// Filter sensitive origin headers to prevent leakage
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "server" || lowerKey == "x-powered-by" || lowerKey == "via" {
+			continue
+		}
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}

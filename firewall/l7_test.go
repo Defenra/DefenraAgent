@@ -35,12 +35,13 @@ func TestL7Protection(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 
-		if suspicion != 0 {
-			t.Errorf("Expected suspicion level 0 for known browser, got %d", suspicion)
+		// Without session, suspicion should be 1
+		if suspicion != 1 {
+			t.Errorf("Expected suspicion level 1 for known browser without session, got %d", suspicion)
 		}
 
-		if browserType != "Chromium" {
-			t.Errorf("Expected browser type 'Chromium', got '%s'", browserType)
+		if !strings.Contains(browserType, "No session") {
+			t.Errorf("Expected browser type to mention 'No session', got '%s'", browserType)
 		}
 	})
 
@@ -55,12 +56,13 @@ func TestL7Protection(t *testing.T) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 
-		if suspicion != 0 {
-			t.Errorf("Expected suspicion level 0 for normal browser with unknown fingerprint, got %d", suspicion)
+		// Without session, suspicion should be 1
+		if suspicion != 1 {
+			t.Errorf("Expected suspicion level 1 for normal browser with unknown fingerprint without session, got %d", suspicion)
 		}
 
-		if browserType != "Normal User-Agent" {
-			t.Errorf("Expected browser type 'Normal User-Agent', got '%s'", browserType)
+		if !strings.Contains(browserType, "No session") {
+			t.Errorf("Expected browser type to mention 'No session', got '%s'", browserType)
 		}
 	})
 

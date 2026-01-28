@@ -37,20 +37,21 @@ func TestSimpleRateLimit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Unexpected error on request %d: %v", i+1, err)
 		}
-		if suspicion < 0 {
-			t.Fatalf("Request %d was blocked unexpectedly", i+1)
+		// Without session, suspicion should be 1 (Cookie Challenge required)
+		if suspicion != 1 {
+			t.Errorf("Expected request %d to have suspicion 1, got %d", i+1, suspicion)
 		}
 	}
 
 	// Next request should be blocked by IP rate limit
-	suspicion, reason, err := l7.AnalyzeRequest(req, testIP, "")
-	t.Logf("Request 4 (should be blocked): suspicion=%d, reason='%s', err=%v", suspicion, reason, err)
+	suspicionLimit, reasonLimit, errLimit := l7.AnalyzeRequest(req, testIP, "")
+	t.Logf("Request 4 (should be blocked): suspicion=%d, reason='%s', err=%v", suspicionLimit, reasonLimit, errLimit)
 
-	if err == nil {
-		t.Error("Expected request to be blocked by IP rate limit")
+	if suspicionLimit != -1 {
+		t.Errorf("Expected request to be blocked (suspicion -1), got %d", suspicionLimit)
 	}
 
-	if suspicion != -1 {
-		t.Errorf("Expected request to be blocked (suspicion -1), got %d", suspicion)
+	if errLimit != nil {
+		t.Errorf("Unexpected error: %v", errLimit)
 	}
 }

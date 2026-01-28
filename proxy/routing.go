@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"fmt"
+	"hash/crc32"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -135,8 +138,14 @@ func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget str
 		}
 	}
 
-	// Select best agent based on health score and latency
-	selectedAgent := selectBestAgent(availableAgents)
+	// Extract client IP for consistent hashing
+	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+
+	// Select best agent using Consistent Hashing on Client IP
+	selectedAgent := selectBestAgent(availableAgents, clientIP)
 	if selectedAgent == nil {
 		return RoutingDecision{
 			Mode:     "anycast",
@@ -154,7 +163,7 @@ func routeAnycast(r *http.Request, domainConfig *config.Domain, originTarget str
 		IsAgent:  true,
 		HopCount: hopCount,
 		HopPath:  hopPath,
-		Reason:   fmt.Sprintf("selected agent %s (health: %.2f, latency: %v)", selectedAgent.AgentID, selectedAgent.HealthScore, selectedAgent.Latency),
+		Reason:   fmt.Sprintf("selected agent %s (health: %.2f, method: consistent-hashing)", selectedAgent.AgentID, selectedAgent.HealthScore),
 	}
 }
 
@@ -182,8 +191,8 @@ func AddHopHeader(r *http.Request, agentID string) {
 	}
 }
 
-// selectBestAgent selects the best agent based on health score and load score
-func selectBestAgent(agents []*DiscoveredAgent) *DiscoveredAgent {
+// selectBestAgent selects an agent using Consistent Hashing on the client IP
+func selectBestAgent(agents []*DiscoveredAgent, clientIP string) *DiscoveredAgent {
 	if len(agents) == 0 {
 		return nil
 	}
@@ -202,28 +211,21 @@ func selectBestAgent(agents []*DiscoveredAgent) *DiscoveredAgent {
 		return nil
 	}
 
-	// Select agent with best combined score: health score (0-1) and inverted load score (0-1)
-	var best *DiscoveredAgent
-	bestScore := 0.0
+	// Sort agents by AgentID to ensure deterministic order for consistent hashing
+	sort.Slice(availableAgents, func(i, j int) bool {
+		return availableAgents[i].AgentID < availableAgents[j].AgentID
+	})
 
-	for _, agent := range availableAgents {
-		// Combined score: 70% health score + 30% inverted load score
-		// Load score is 0-100, so we invert it: (100 - loadScore) / 100
-		invertedLoadScore := (100.0 - agent.LoadScore) / 100.0
-		combinedScore := (agent.HealthScore * 0.7) + (invertedLoadScore * 0.3)
+	// Use CRC32 of client IP to pick an agent
+	hash := crc32.ChecksumIEEE([]byte(clientIP))
+	index := int(hash) % len(availableAgents)
 
-		if combinedScore > bestScore {
-			bestScore = combinedScore
-			best = agent
-		}
-	}
+	selected := availableAgents[index]
 
-	if best != nil {
-		log.Printf("[Routing] Selected agent %s: health=%.2f, load=%.1f%%, combined=%.2f",
-			best.AgentID, best.HealthScore, best.LoadScore, bestScore)
-	}
+	log.Printf("[Routing] Selected agent %s for IP %s (Index: %d/%d)",
+		selected.AgentID, clientIP, index, len(availableAgents))
 
-	return best
+	return selected
 }
 
 // GetGlobalAgentDiscovery returns the global agent discovery instance

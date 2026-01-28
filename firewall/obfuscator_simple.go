@@ -59,14 +59,14 @@ if(hash.startsWith(target)){
 if(statusMessage)statusMessage.textContent='Доказательство работы завершено! Перенаправление...';
 if(progressBar)progressBar.style.width='100%%';
 var form=document.createElement('form');
-form.method='String.fromCharCode(80,79,83,84)';
+form.method=String.fromCharCode(80,79,83,84);
 form.action=window.location.pathname;
 var nonceInput=document.createElement('input');
-nonceInput.type='String.fromCharCode(104,105,100,100,101,110)';
+nonceInput.type=String.fromCharCode(104,105,100,100,101,110);
 nonceInput.name='defenra_pow_nonce';
 nonceInput.value=nonce;
 var saltInput=document.createElement('input');
-saltInput.type='String.fromCharCode(104,105,100,100,101,110)';
+saltInput.type=String.fromCharCode(104,105,100,100,101,110);
 saltInput.name='defenra_pow_salt';
 saltInput.value=publicSalt;
 form.appendChild(nonceInput);
