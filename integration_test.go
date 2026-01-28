@@ -47,7 +47,7 @@ func TestIntegration_AntiDDoS(t *testing.T) {
 		// 4. статистика rate limit обновляется в HTTP handler, здесь не проверяем
 
 		// 5. баним IP через iptables
-		err := firewallMgr.BanIP(testIP, 1*time.Minute)
+		err := firewallMgr.BanIP(testIP, 1*time.Minute, "Test ban")
 		if err != nil {
 			t.Logf("BanIP error (expected if not root): %v", err)
 		}

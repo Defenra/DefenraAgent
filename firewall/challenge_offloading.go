@@ -126,7 +126,7 @@ func (t *ChallengeOffloadingTracker) RecordFailure(ip string, challengeType stri
 		firewallMgr := GetIPTablesManager()
 		if firewallMgr != nil {
 			go func() {
-				if err := firewallMgr.BanIP(ip, t.banDuration); err != nil {
+				if err := firewallMgr.BanIP(ip, t.banDuration, "Challenge offloading (repeated failures)"); err != nil {
 					log.Printf("[Challenge-Offloading] Failed to ban IP %s: %v", ip, err)
 				} else {
 					log.Printf("[Challenge-Offloading] Successfully offloaded IP %s to kernel-level blocking", ip)

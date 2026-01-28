@@ -387,7 +387,7 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
-						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute); err != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute, "Rate limit violation (2nd)"); err != nil {
 							log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
 						}
 					}
@@ -401,7 +401,7 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
-						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute); err != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute, "Rate limit violation (3rd+)"); err != nil {
 							log.Printf("[HTTP] Failed to ban IP %s: %v", clientIP, err)
 						}
 					}

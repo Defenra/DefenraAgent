@@ -90,9 +90,13 @@ func (m *IPTablesManager) ensureChainLegacy(chainName string) error {
 	return nil
 }
 
-func (m *IPTablesManager) BanIP(ip string, duration time.Duration) error {
+func (m *IPTablesManager) BanIP(ip string, duration time.Duration, reason string) error {
 	if duration <= 0 {
 		duration = 24 * time.Hour
+	}
+
+	if reason == "" {
+		reason = "Unknown"
 	}
 
 	m.mu.Lock()
@@ -103,22 +107,23 @@ func (m *IPTablesManager) BanIP(ip string, duration time.Duration) error {
 
 	if m.useIPSet {
 		// Use ipset (O(1) lookup, efficient for millions of IPs)
-		return m.banIPWithIPSet(ip, duration)
+		return m.banIPWithIPSet(ip, duration, reason)
 	} else {
 		// Fallback to iptables rules (O(n) lookup, slow with many IPs)
-		return m.banIPWithIPTables(ip)
+		return m.banIPWithIPTables(ip, reason)
 	}
 }
 
-func (m *IPTablesManager) banIPWithIPSet(ip string, duration time.Duration) error {
+func (m *IPTablesManager) banIPWithIPSet(ip string, duration time.Duration, reason string) error {
 	timeout := int(duration.Seconds())
-	comment := fmt.Sprintf("Banned at %s", time.Now().Format(time.RFC3339))
+	// Format: "Reason: TLS flood | Banned at 2026-01-28T20:27:17Z"
+	comment := fmt.Sprintf("Reason: %s | Banned at %s", reason, time.Now().Format(time.RFC3339))
 
 	// Check if IP is already in set
 	cmd := exec.Command("ipset", "test", m.tempbanSet, ip)
 	if err := cmd.Run(); err == nil {
-		// Already banned, update timeout
-		log.Printf("[Firewall] IP %s already in ipset, updating timeout", ip)
+		// Already banned, update timeout and reason
+		log.Printf("[Firewall] IP %s already in ipset, updating timeout and reason", ip)
 	}
 
 	// Add to temporary ban set with timeout
@@ -134,11 +139,11 @@ func (m *IPTablesManager) banIPWithIPSet(ip string, duration time.Duration) erro
 	IncTotalBans()
 	IncActiveBans()
 
-	log.Printf("[Firewall] Banned IP %s for %v (ipset)", ip, duration)
+	log.Printf("[Firewall] Banned IP %s for %v (ipset) - Reason: %s", ip, duration, reason)
 	return nil
 }
 
-func (m *IPTablesManager) banIPWithIPTables(ip string) error {
+func (m *IPTablesManager) banIPWithIPTables(ip string, reason string) error {
 	chainName := "DEFENRA_BLOCK"
 
 	// Check if rule already exists
@@ -157,7 +162,7 @@ func (m *IPTablesManager) banIPWithIPTables(ip string) error {
 	IncTotalBans()
 	IncActiveBans()
 
-	log.Printf("[Firewall] Banned IP %s (iptables)", ip)
+	log.Printf("[Firewall] Banned IP %s (iptables) - Reason: %s", ip, reason)
 	return nil
 }
 
@@ -315,24 +320,28 @@ func (m *IPTablesManager) Stop() {
 }
 
 // BanIPRange blocks IP range (CIDR)
-func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration) error {
+func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration, reason string) error {
 	if duration <= 0 {
 		duration = 24 * time.Hour
+	}
+
+	if reason == "" {
+		reason = "CIDR ban"
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.useIPSet {
-		return m.banIPRangeWithIPSet(cidr, duration)
+		return m.banIPRangeWithIPSet(cidr, duration, reason)
 	} else {
-		return m.banIPRangeWithIPTables(cidr)
+		return m.banIPRangeWithIPTables(cidr, reason)
 	}
 }
 
-func (m *IPTablesManager) banIPRangeWithIPSet(cidr string, duration time.Duration) error {
+func (m *IPTablesManager) banIPRangeWithIPSet(cidr string, duration time.Duration, reason string) error {
 	timeout := int(duration.Seconds())
-	comment := fmt.Sprintf("Banned at %s", time.Now().Format(time.RFC3339))
+	comment := fmt.Sprintf("Reason: %s | Banned at %s", reason, time.Now().Format(time.RFC3339))
 
 	// Add to CIDR set
 	cmd := exec.Command("ipset", "add", m.cidrSet, cidr,
@@ -344,11 +353,11 @@ func (m *IPTablesManager) banIPRangeWithIPSet(cidr string, duration time.Duratio
 		return fmt.Errorf("failed to add CIDR %s to ipset: %w", cidr, err)
 	}
 
-	log.Printf("[Firewall] Banned CIDR %s for %v (ipset)", cidr, duration)
+	log.Printf("[Firewall] Banned CIDR %s for %v (ipset) - Reason: %s", cidr, duration, reason)
 	return nil
 }
 
-func (m *IPTablesManager) banIPRangeWithIPTables(cidr string) error {
+func (m *IPTablesManager) banIPRangeWithIPTables(cidr string, reason string) error {
 	chainName := "DEFENRA_BLOCK"
 
 	// Check if rule already exists
@@ -364,20 +373,22 @@ func (m *IPTablesManager) banIPRangeWithIPTables(cidr string) error {
 		return fmt.Errorf("failed to ban CIDR %s: %w", cidr, err)
 	}
 
-	log.Printf("[Firewall] Banned CIDR %s (iptables)", cidr)
+	log.Printf("[Firewall] Banned CIDR %s (iptables) - Reason: %s", cidr, reason)
 	return nil
 }
 
 // AddToPermanentBlacklist adds IP to permanent blacklist (no timeout)
-func (m *IPTablesManager) AddToPermanentBlacklist(ip string, comment string) error {
+func (m *IPTablesManager) AddToPermanentBlacklist(ip string, reason string) error {
 	if !m.useIPSet {
 		log.Printf("[Firewall] Permanent blacklist requires ipset, falling back to 24h ban")
-		return m.BanIP(ip, 24*time.Hour)
+		return m.BanIP(ip, 24*time.Hour, reason)
 	}
 
-	if comment == "" {
-		comment = fmt.Sprintf("Permanent ban at %s", time.Now().Format(time.RFC3339))
+	if reason == "" {
+		reason = "Permanent ban"
 	}
+
+	comment := fmt.Sprintf("Reason: %s | Banned at %s", reason, time.Now().Format(time.RFC3339))
 
 	cmd := exec.Command("ipset", "add", m.blacklistSet, ip,
 		"comment", comment,
@@ -387,7 +398,7 @@ func (m *IPTablesManager) AddToPermanentBlacklist(ip string, comment string) err
 		return fmt.Errorf("failed to add IP %s to permanent blacklist: %w", ip, err)
 	}
 
-	log.Printf("[Firewall] Added IP %s to permanent blacklist", ip)
+	log.Printf("[Firewall] Added IP %s to permanent blacklist - Reason: %s", ip, reason)
 	return nil
 }
 
