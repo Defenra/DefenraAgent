@@ -182,8 +182,9 @@ func (m *IPTablesManager) UnbanIP(ip string) error {
 
 func (m *IPTablesManager) unbanIPWithIPSet(ip string) error {
 	// Remove from both sets (permanent and temporary)
-	exec.Command("ipset", "del", m.blacklistSet, ip).Run()
-	exec.Command("ipset", "del", m.tempbanSet, ip).Run()
+	// We ignore errors here because the IP might not be in one of the sets
+	_ = exec.Command("ipset", "del", m.blacklistSet, ip).Run()
+	_ = exec.Command("ipset", "del", m.tempbanSet, ip).Run()
 
 	log.Printf("[Firewall] Unbanned IP %s (ipset)", ip)
 	return nil

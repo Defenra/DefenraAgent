@@ -222,7 +222,6 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 			// Valid session - extend it and allow request
 			sessionManager.ExtendSession(sessionCookie.Value)
 			log.Printf("[L7] Valid session found for IP %s, allowing request", clientIP)
-			hasValidSession = true
 			return 0, "session_valid", nil
 		} else {
 			log.Printf("[L7] Invalid session for IP %s, session ID: %s", clientIP, sessionCookie.Value)

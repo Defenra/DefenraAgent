@@ -51,9 +51,7 @@ type Location struct {
 
 // AgentHealthChecker monitors health of discovered agents
 type AgentHealthChecker struct {
-	mu      sync.RWMutex
-	client  *http.Client
-	results map[string]*HealthCheckResult
+	client *http.Client
 }
 
 // HealthCheckResult stores health check results for an agent
@@ -90,20 +88,23 @@ func NewAgentHealthChecker() *AgentHealthChecker {
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		results: make(map[string]*HealthCheckResult),
 	}
 }
 
 // Start begins periodic agent discovery and health checks
 func (ad *AgentDiscovery) Start() {
 	// Initial discovery
-	ad.DiscoverAgents()
+	if err := ad.DiscoverAgents(); err != nil {
+		log.Printf("[AgentDiscovery] Initial discovery failed: %v", err)
+	}
 
 	// Start periodic discovery (every 60 seconds)
 	ad.updateTicker = time.NewTicker(60 * time.Second)
 	go func() {
 		for range ad.updateTicker.C {
-			ad.DiscoverAgents()
+			if err := ad.DiscoverAgents(); err != nil {
+				log.Printf("[AgentDiscovery] Periodic discovery failed: %v", err)
+			}
 		}
 	}()
 

@@ -16,7 +16,9 @@ type JSObfuscator struct {
 // NewJSObfuscator creates a new obfuscator with a random salt
 func NewJSObfuscator() *JSObfuscator {
 	salt := make([]byte, 16)
-	rand.Read(salt)
+	if _, err := rand.Read(salt); err != nil {
+		panic(fmt.Sprintf("failed to generate random salt: %v", err))
+	}
 	return &JSObfuscator{
 		salt: hex.EncodeToString(salt),
 	}
@@ -234,7 +236,10 @@ func (o *JSObfuscator) randomInt(max int) int {
 // randomHex generates random hex string
 func (o *JSObfuscator) randomHex(length int) string {
 	bytes := make([]byte, length/2+1)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback
+		return "000000"
+	}
 	return hex.EncodeToString(bytes)[:length]
 }
 

@@ -475,7 +475,10 @@ func (cm *ChallengeManager) generateCaptcha(captchaID string) *CaptchaData {
 
 	// Convert to base64
 	var buf bytes.Buffer
-	png.Encode(&buf, img)
+	if err := png.Encode(&buf, img); err != nil {
+		log.Printf("[Challenge] Failed to encode CAPTCHA PNG: %v", err)
+		return nil
+	}
 	imageData := base64.StdEncoding.EncodeToString(buf.Bytes())
 
 	return &CaptchaData{
@@ -882,7 +885,10 @@ func (cm *ChallengeManager) fallbackCaptchaChallenge(captchaData *CaptchaData, a
 // Utility functions
 func generateSecret() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		log.Printf("[Challenge] Failed to generate secret: %v", err)
+		return ""
+	}
 	return hex.EncodeToString(bytes)
 }
 
@@ -909,7 +915,11 @@ func generateCaptchaText(length int) string {
 
 func generateRayID() string {
 	bytes := make([]byte, 6)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		log.Printf("[Challenge] Failed to generate RayID: %v", err)
+		// Fallback to timestamp if random fails
+		return fmt.Sprintf("%X", time.Now().UnixNano())
+	}
 	return strings.ToUpper(hex.EncodeToString(bytes))
 }
 
@@ -1298,322 +1308,7 @@ func getEmbeddedTemplate() string {
 </html>`
 }
 
-// Simple character drawing function for CAPTCHA
-func drawSimpleChar(img *image.RGBA, char rune, x, y int, c color.RGBA) {
-	// Simple 5x7 pixel patterns for characters
-	patterns := map[rune][]string{
-		'A': {
-			" ### ",
-			"#   #",
-			"#   #",
-			"#####",
-			"#   #",
-			"#   #",
-			"     ",
-		},
-		'B': {
-			"#### ",
-			"#   #",
-			"#### ",
-			"#### ",
-			"#   #",
-			"#### ",
-			"     ",
-		},
-		'C': {
-			" ####",
-			"#    ",
-			"#    ",
-			"#    ",
-			"#    ",
-			" ####",
-			"     ",
-		},
-		'D': {
-			"#### ",
-			"#   #",
-			"#   #",
-			"#   #",
-			"#   #",
-			"#### ",
-			"     ",
-		},
-		'E': {
-			"#####",
-			"#    ",
-			"#### ",
-			"#    ",
-			"#    ",
-			"#####",
-			"     ",
-		},
-		'F': {
-			"#####",
-			"#    ",
-			"#### ",
-			"#    ",
-			"#    ",
-			"#    ",
-			"     ",
-		},
-		'G': {
-			" ####",
-			"#    ",
-			"# ###",
-			"#   #",
-			"#   #",
-			" ####",
-			"     ",
-		},
-		'H': {
-			"#   #",
-			"#   #",
-			"#####",
-			"#   #",
-			"#   #",
-			"#   #",
-			"     ",
-		},
-		'J': {
-			"  ###",
-			"    #",
-			"    #",
-			"    #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'K': {
-			"#   #",
-			"#  # ",
-			"# #  ",
-			"##   ",
-			"# #  ",
-			"#  ##",
-			"     ",
-		},
-		'L': {
-			"#    ",
-			"#    ",
-			"#    ",
-			"#    ",
-			"#    ",
-			"#####",
-			"     ",
-		},
-		'M': {
-			"#   #",
-			"## ##",
-			"# # #",
-			"#   #",
-			"#   #",
-			"#   #",
-			"     ",
-		},
-		'N': {
-			"#   #",
-			"##  #",
-			"# # #",
-			"#  ##",
-			"#   #",
-			"#   #",
-			"     ",
-		},
-		'P': {
-			"#### ",
-			"#   #",
-			"#### ",
-			"#    ",
-			"#    ",
-			"#    ",
-			"     ",
-		},
-		'Q': {
-			" ### ",
-			"#   #",
-			"#   #",
-			"# # #",
-			"#  ##",
-			" ####",
-			"     ",
-		},
-		'R': {
-			"#### ",
-			"#   #",
-			"#### ",
-			"# #  ",
-			"#  # ",
-			"#   #",
-			"     ",
-		},
-		'S': {
-			" ####",
-			"#    ",
-			" ### ",
-			"    #",
-			"    #",
-			"#### ",
-			"     ",
-		},
-		'T': {
-			"#####",
-			"  #  ",
-			"  #  ",
-			"  #  ",
-			"  #  ",
-			"  #  ",
-			"     ",
-		},
-		'U': {
-			"#   #",
-			"#   #",
-			"#   #",
-			"#   #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'V': {
-			"#   #",
-			"#   #",
-			"#   #",
-			"#   #",
-			" # # ",
-			"  #  ",
-			"     ",
-		},
-		'W': {
-			"#   #",
-			"#   #",
-			"#   #",
-			"# # #",
-			"## ##",
-			"#   #",
-			"     ",
-		},
-		'X': {
-			"#   #",
-			" # # ",
-			"  #  ",
-			"  #  ",
-			" # # ",
-			"#   #",
-			"     ",
-		},
-		'Y': {
-			"#   #",
-			" # # ",
-			"  #  ",
-			"  #  ",
-			"  #  ",
-			"  #  ",
-			"     ",
-		},
-		'Z': {
-			"#####",
-			"   # ",
-			"  #  ",
-			" #   ",
-			"#    ",
-			"#####",
-			"     ",
-		},
-		'2': {
-			" ### ",
-			"#   #",
-			"   # ",
-			"  #  ",
-			" #   ",
-			"#####",
-			"     ",
-		},
-		'3': {
-			" ### ",
-			"#   #",
-			"  ## ",
-			"    #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'4': {
-			"   # ",
-			"  ## ",
-			" # # ",
-			"#  # ",
-			"#####",
-			"   # ",
-			"     ",
-		},
-		'5': {
-			"#####",
-			"#    ",
-			"#### ",
-			"    #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'6': {
-			" ### ",
-			"#    ",
-			"#### ",
-			"#   #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'7': {
-			"#####",
-			"    #",
-			"   # ",
-			"  #  ",
-			" #   ",
-			"#    ",
-			"     ",
-		},
-		'8': {
-			" ### ",
-			"#   #",
-			" ### ",
-			"#   #",
-			"#   #",
-			" ### ",
-			"     ",
-		},
-		'9': {
-			" ### ",
-			"#   #",
-			"#   #",
-			" ####",
-			"    #",
-			" ### ",
-			"     ",
-		},
-	}
 
-	pattern, exists := patterns[char]
-	if !exists {
-		// Draw a simple rectangle for unknown characters
-		for dy := 0; dy < 7; dy++ {
-			for dx := 0; dx < 5; dx++ {
-				if dy == 0 || dy == 6 || dx == 0 || dx == 4 {
-					img.Set(x+dx, y+dy, c)
-				}
-			}
-		}
-		return
-	}
-
-	// Draw the character pattern
-	for dy, row := range pattern {
-		for dx, pixel := range row {
-			if pixel == '#' {
-				img.Set(x+dx, y+dy, c)
-			}
-		}
-	}
-}
 
 // Add noise to CAPTCHA image to prevent OCR
 func addNoise(img *image.RGBA) {

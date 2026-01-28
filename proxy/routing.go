@@ -264,8 +264,8 @@ func selectAgent(pool []config.AgentInfo) *config.AgentInfo {
 		return nil
 	}
 
-	rand.Seed(time.Now().UnixNano())
-	selected := highPriorityAgents[rand.Intn(len(highPriorityAgents))]
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	selected := highPriorityAgents[rng.Intn(len(highPriorityAgents))]
 	return &selected
 }
 

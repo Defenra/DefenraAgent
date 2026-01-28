@@ -320,7 +320,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		ruleEngine := firewall.NewRuleEngine()
 		for _, rule := range domainConfig.HTTPProxy.AntiDDoS.CustomRules {
 			if rule.Enabled {
-				ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled)
+				if err := ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled); err != nil {
+					log.Printf("[HTTPS] Failed to add custom rule %s: %v", rule.Name, err)
+				}
 			}
 		}
 
@@ -405,7 +407,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 			ruleEngine := firewall.NewRuleEngine()
 			for _, rule := range domainConfig.HTTPProxy.AntiDDoS.CustomRules {
 				if rule.Enabled {
-					ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled)
+					if err := ruleEngine.AddRule(rule.Name, rule.Expression, rule.Action, rule.Enabled); err != nil {
+						log.Printf("[HTTPS] Failed to add custom rule %s: %v", rule.Name, err)
+					}
 				}
 			}
 
@@ -962,7 +966,9 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 			w.Header().Set(key, value)
 		}
 		w.WriteHeader(errorResponse.StatusCode)
-		w.Write([]byte(errorResponse.Body))
+		if _, err := w.Write([]byte(errorResponse.Body)); err != nil {
+			log.Printf("[HTTPS] Error writing error response: %v", err)
+		}
 
 		atomic.AddUint64(&s.stats.ProxyErrors, 1)
 		return
@@ -1028,7 +1034,9 @@ func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response
 	// If client is not reading (slow loris attack), this will timeout
 	done := make(chan bool, 1)
 	go func() {
-		w.Write([]byte(response.Body))
+		if _, err := w.Write([]byte(response.Body)); err != nil {
+			log.Printf("[HTTPS] Error writing challenge response body: %v", err)
+		}
 		done <- true
 	}()
 
