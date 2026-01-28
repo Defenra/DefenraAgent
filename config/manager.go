@@ -336,6 +336,18 @@ func (cm *ConfigManager) GetAllDomains() []Domain {
 	return domains
 }
 
+// GetAllDomainNames возвращает список всех настроенных доменов для SNI validation
+func (cm *ConfigManager) GetAllDomainNames() []string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	domainNames := make([]string, 0, len(cm.config.Domains))
+	for _, domain := range cm.config.Domains {
+		domainNames = append(domainNames, domain.Domain)
+	}
+	return domainNames
+}
+
 func (cm *ConfigManager) GetProxies() []Proxy {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()

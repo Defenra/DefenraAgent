@@ -65,9 +65,22 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 
 	globalHTTPSServer = server
 
+	// === FORTRESS EDITION: Получаем список настроенных доменов для SNI validation ===
+	configuredDomains := server.configMgr.GetAllDomainNames()
+	log.Printf("[HTTPS] Fortress Edition: Protecting %d configured domains", len(configuredDomains))
+
 	tlsConfig := &tls.Config{
 		GetCertificate: server.getCertificate,
 		MinVersion:     tls.VersionTLS12,
+		// === FORTRESS EDITION: GetConfigForClient - главная точка защиты ===
+		// Layer 1: SNI Validation (отсекает сканеры)
+		// Layer 2: Handshake Rate Limiting (защита от velocity attacks)
+		// Layer 3: TLS Fingerprinting (обнаружение ботнетов)
+		GetConfigForClient: firewall.GetConfigForClientWrapper(
+			nil, // baseConfig (nil = use default)
+			configuredDomains,
+			server.getCertificate,
+		),
 	}
 
 	httpsServer := &http.Server{
@@ -131,12 +144,13 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 	log.Println("[HTTPS] TLS listener ready with certificate caching")
 
 	// 5. Запускаем HTTPS сервер
-	log.Println("[HTTPS] Starting HTTPS server with Edge-grade protection:")
-	log.Println("[HTTPS]   - LimitListener: 10000 max connections (FD exhaustion protection)")
-	log.Println("[HTTPS]   - FirewallListener: IP blacklist filtering (pre-TLS)")
-	log.Println("[HTTPS]   - ReadHeaderTimeout: 2s (slow-loris protection)")
-	log.Println("[HTTPS]   - HTTP/2 MaxStreams: 50 (rapid reset protection)")
-	log.Println("[HTTPS]   - TLS 1.2+ only (security)")
+	log.Println("[HTTPS] Starting HTTPS server with Fortress Edition protection:")
+	log.Println("[HTTPS]   - Layer 0: Fortress GetConfigForClient (SNI validation, handshake rate limiting, TLS fingerprinting)")
+	log.Println("[HTTPS]   - Layer 1: LimitListener (10000 max connections, FD exhaustion protection)")
+	log.Println("[HTTPS]   - Layer 2: FirewallListener (IP blacklist filtering, pre-TLS)")
+	log.Println("[HTTPS]   - Layer 3: ReadHeaderTimeout 2s (slow-loris protection)")
+	log.Println("[HTTPS]   - Layer 4: HTTP/2 MaxStreams 50 (rapid reset protection)")
+	log.Println("[HTTPS]   - Layer 5: TLS 1.2+ only (security)")
 	log.Fatal(httpsServer.Serve(tlsLn))
 }
 
