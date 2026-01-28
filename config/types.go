@@ -11,16 +11,16 @@ type Config struct {
 }
 
 type Domain struct {
-	ID                  string                       `json:"id,omitempty"` // MongoDB ObjectId домена
-	Domain              string                       `json:"domain"`
-	DNSRecords          []DNSRecord                  `json:"dnsRecords"`
-	GeoDNSMap           map[string]string            `json:"geoDnsMap"`           // Backward compatibility: location -> best agent IP
-	GeoDnsFallbackMap   map[string]string            `json:"geoDnsFallbackMap"`   // Country fallbacks: cz -> de agent IP (nearest)
-	GeoDNSAgentPools    map[string][]GeoDNSAgentInfo `json:"geoDnsAgentPools"`    // New: location -> array of agents with weights
-	HTTPProxy           HTTPProxy                    `json:"httpProxy"`
-	SSL                 SSL                          `json:"ssl"`
-	LuaCode             string                       `json:"luaCode"`
-	PageRules           []PageRule                   `json:"pageRules"`
+	ID                string                       `json:"id,omitempty"` // MongoDB ObjectId домена
+	Domain            string                       `json:"domain"`
+	DNSRecords        []DNSRecord                  `json:"dnsRecords"`
+	GeoDNSMap         map[string]string            `json:"geoDnsMap"`         // Backward compatibility: location -> best agent IP
+	GeoDnsFallbackMap map[string]string            `json:"geoDnsFallbackMap"` // Country fallbacks: cz -> de agent IP (nearest)
+	GeoDNSAgentPools  map[string][]GeoDNSAgentInfo `json:"geoDnsAgentPools"`  // New: location -> array of agents with weights
+	HTTPProxy         HTTPProxy                    `json:"httpProxy"`
+	SSL               SSL                          `json:"ssl"`
+	LuaCode           string                       `json:"luaCode"`
+	PageRules         []PageRule                   `json:"pageRules"`
 }
 
 type GeoDNSAgentInfo struct {
@@ -90,10 +90,10 @@ type ChallengeSettings struct {
 }
 
 type AutoOffloading struct {
-	Enabled           bool `json:"enabled"`           // Включить автоматический offloading в iptables
-	FailureThreshold  int  `json:"failureThreshold"`  // Количество неудачных попыток (default: 5)
-	TimeWindowSeconds int  `json:"timeWindowSeconds"` // Временное окно в секундах (default: 10)
-	BanDurationMinutes int `json:"banDurationMinutes"` // Длительность бана в минутах (default: 60)
+	Enabled            bool `json:"enabled"`            // Включить автоматический offloading в iptables
+	FailureThreshold   int  `json:"failureThreshold"`   // Количество неудачных попыток (default: 5)
+	TimeWindowSeconds  int  `json:"timeWindowSeconds"`  // Временное окно в секундах (default: 10)
+	BanDurationMinutes int  `json:"banDurationMinutes"` // Длительность бана в минутах (default: 60)
 }
 
 type CookieChallenge struct {

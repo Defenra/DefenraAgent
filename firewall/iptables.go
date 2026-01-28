@@ -38,13 +38,13 @@ func GetIPTablesManager() *IPTablesManager {
 		if err := exec.Command("ipset", "list").Run(); err == nil {
 			manager.useIPSet = true
 			log.Printf("[Firewall] ipset detected, using ipset for IP blocking (O(1) lookup)")
-			
+
 			// Ensure ipset sets exist (created by quick-install.sh or setup-ipset.sh)
 			// We don't create them here to avoid conflicts
 		} else {
 			manager.useIPSet = false
 			log.Printf("[Firewall] ipset not available, falling back to iptables rules (O(n) lookup)")
-			
+
 			// Create iptables chain for fallback
 			chainName := "DEFENRA_BLOCK"
 			if err := manager.ensureChainLegacy(chainName); err != nil {
@@ -122,11 +122,11 @@ func (m *IPTablesManager) banIPWithIPSet(ip string, duration time.Duration) erro
 	}
 
 	// Add to temporary ban set with timeout
-	cmd = exec.Command("ipset", "add", m.tempbanSet, ip, 
+	cmd = exec.Command("ipset", "add", m.tempbanSet, ip,
 		"timeout", strconv.Itoa(timeout),
 		"comment", comment,
 		"-exist") // -exist flag updates existing entry instead of failing
-	
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to add IP %s to ipset: %w", ip, err)
 	}
@@ -140,7 +140,7 @@ func (m *IPTablesManager) banIPWithIPSet(ip string, duration time.Duration) erro
 
 func (m *IPTablesManager) banIPWithIPTables(ip string) error {
 	chainName := "DEFENRA_BLOCK"
-	
+
 	// Check if rule already exists
 	cmd := exec.Command("iptables", "-t", "filter", "-C", chainName, "-s", ip, "-j", "DROP")
 	if err := cmd.Run(); err == nil {
@@ -186,7 +186,7 @@ func (m *IPTablesManager) unbanIPWithIPSet(ip string) error {
 
 func (m *IPTablesManager) unbanIPWithIPTables(ip string) error {
 	chainName := "DEFENRA_BLOCK"
-	
+
 	// Remove rule
 	cmd := exec.Command("iptables", "-t", "filter", "-D", chainName, "-s", ip, "-j", "DROP")
 	if err := cmd.Run(); err != nil {
@@ -350,7 +350,7 @@ func (m *IPTablesManager) banIPRangeWithIPSet(cidr string, duration time.Duratio
 
 func (m *IPTablesManager) banIPRangeWithIPTables(cidr string) error {
 	chainName := "DEFENRA_BLOCK"
-	
+
 	// Check if rule already exists
 	cmd := exec.Command("iptables", "-t", "filter", "-C", chainName, "-s", cidr, "-j", "DROP")
 	if err := cmd.Run(); err == nil {

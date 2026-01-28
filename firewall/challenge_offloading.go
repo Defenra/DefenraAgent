@@ -25,7 +25,7 @@ type challengeFailureInfo struct {
 	count       int
 	firstFail   time.Time
 	lastFail    time.Time
-	offloaded   bool      // Уже отправлен в iptables
+	offloaded   bool // Уже отправлен в iptables
 	offloadedAt time.Time
 }
 
@@ -36,13 +36,13 @@ var globalChallengeOffloadingTrackerOnce sync.Once
 func GetChallengeOffloadingTracker() *ChallengeOffloadingTracker {
 	globalChallengeOffloadingTrackerOnce.Do(func() {
 		tracker := &ChallengeOffloadingTracker{
-			failures:        make(map[string]*challengeFailureInfo),
-			enabled:         true,                // По умолчанию включен
-			failureThreshold: 5,                  // 5 неудачных попыток
-			timeWindow:      10 * time.Second,    // За 10 секунд
-			banDuration:     60 * time.Minute,    // Бан на 60 минут
-			cleanupInterval: 60 * time.Second,    // Очистка каждую минуту
-			stopChan:        make(chan struct{}),
+			failures:         make(map[string]*challengeFailureInfo),
+			enabled:          true,             // По умолчанию включен
+			failureThreshold: 5,                // 5 неудачных попыток
+			timeWindow:       10 * time.Second, // За 10 секунд
+			banDuration:      60 * time.Minute, // Бан на 60 минут
+			cleanupInterval:  60 * time.Second, // Очистка каждую минуту
+			stopChan:         make(chan struct{}),
 		}
 		go tracker.cleanup()
 		globalChallengeOffloadingTracker = tracker
