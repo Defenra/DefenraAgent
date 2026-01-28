@@ -181,6 +181,8 @@ func (sm *SessionManager) Stop() {
 // generateSessionID generates a random session ID
 func generateSessionID() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		log.Panicf("[Session] Failed to generate random session ID: %v", err)
+	}
 	return hex.EncodeToString(bytes)
 }

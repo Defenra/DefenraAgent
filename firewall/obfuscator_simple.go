@@ -14,7 +14,9 @@ type SimpleJSObfuscator struct {
 // NewSimpleJSObfuscator creates a new simple obfuscator
 func NewSimpleJSObfuscator() *SimpleJSObfuscator {
 	salt := make([]byte, 8)
-	rand.Read(salt)
+	if _, err := rand.Read(salt); err != nil {
+		panic(fmt.Sprintf("failed to generate random salt: %v", err))
+	}
 	return &SimpleJSObfuscator{
 		salt: hex.EncodeToString(salt),
 	}
