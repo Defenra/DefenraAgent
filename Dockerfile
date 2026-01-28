@@ -17,7 +17,7 @@ WORKDIR /app
 
 COPY --from=builder /app/defenra-agent .
 
-RUN wget -O GeoLite2-City.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+RUN wget -O GeoLite2-City.mmdb https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb
 
 EXPOSE 53/udp 53/tcp 80/tcp 443/tcp 8080/tcp
 

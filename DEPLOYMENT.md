@@ -49,7 +49,7 @@ go build -o defenra-agent .
 ### 2. Download GeoIP Database
 
 ```bash
-wget -O GeoLite2-City.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+wget -O GeoLite2-City.mmdb https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb
 ```
 
 ### 3. Configure

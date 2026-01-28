@@ -38,7 +38,7 @@ docker-run:
 
 geoip:
 	@echo "Downloading GeoIP database..."
-	wget -O $(GEOIP_DB) https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb
+	wget -O $(GEOIP_DB) https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb
 
 deps:
 	@echo "Downloading dependencies..."

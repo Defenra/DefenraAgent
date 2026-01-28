@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 # Configuration
 INSTALL_DIR="/opt/defenra-agent"
 SERVICE_FILE="/etc/systemd/system/defenra-agent.service"
-GEOIP_URL="https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+GEOIP_URL="https://github.com/Defenra/DefenraCore/raw/refs/heads/main/data/GeoLite2-City.mmdb"
 GITHUB_REPO="Defenra/DefenraAgent"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 MIN_GO_VERSION="1.21"
