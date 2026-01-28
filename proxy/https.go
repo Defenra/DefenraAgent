@@ -432,12 +432,34 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		if challengeSettings != nil && suspicionLevel > 0 {
 			challengeMgr := firewall.GetChallengeManager()
 
+			// === FORTRESS OFFLOADING: Инициализация tracker ===
+			offloadingTracker := firewall.GetChallengeOffloadingTracker()
+			
+			// Обновляем конфигурацию offloading из настроек домена
+			if challengeSettings.AutoOffloading != nil {
+				offloadingTracker.UpdateConfig(
+					challengeSettings.AutoOffloading.Enabled,
+					challengeSettings.AutoOffloading.FailureThreshold,
+					challengeSettings.AutoOffloading.TimeWindowSeconds,
+					challengeSettings.AutoOffloading.BanDurationMinutes,
+				)
+			}
+
 			switch suspicionLevel {
 			case 1:
 				// Cookie challenge
 				if challengeSettings.CookieChallenge != nil && challengeSettings.CookieChallenge.Enabled {
 					if !challengeMgr.ValidateCookieChallenge(r, clientIP) {
 						l7Protection.RecordChallengeFailure(clientIP)
+						
+						// === FORTRESS OFFLOADING: Записываем failure ===
+						if offloadingTracker.RecordFailure(clientIP, "cookie") {
+							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated cookie challenge failures)", clientIP)
+							atomic.AddUint64(&s.stats.BlockedRequests, 1)
+							// IP уже заблокирован в iptables, просто закрываем соединение
+							return
+						}
+						
 						response := challengeMgr.IssueCookieChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
 						return
@@ -446,6 +468,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 						http.SetCookie(w, sessionCookie)
+						
+						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
+						offloadingTracker.ResetIP(clientIP)
 						// Continue processing the request
 					}
 				}
@@ -454,6 +479,14 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				if challengeSettings.JSChallenge != nil && challengeSettings.JSChallenge.Enabled {
 					if !challengeMgr.ValidateJSChallenge(r, challengeSettings.JSChallenge.Difficulty) {
 						l7Protection.RecordChallengeFailure(clientIP)
+						
+						// === FORTRESS OFFLOADING: Записываем failure ===
+						if offloadingTracker.RecordFailure(clientIP, "js_pow") {
+							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated JS PoW challenge failures)", clientIP)
+							atomic.AddUint64(&s.stats.BlockedRequests, 1)
+							return
+						}
+						
 						response := challengeMgr.IssueJSChallenge(w, r, clientIP, challengeSettings.JSChallenge.Difficulty)
 						s.sendChallengeResponse(w, response)
 						return
@@ -463,6 +496,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 
 						log.Printf("[HTTPS] JS PoW challenge passed for IP %s, creating session %s", clientIP, sessionID)
+
+						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
+						offloadingTracker.ResetIP(clientIP)
 
 						if r.Method == "POST" {
 							// POST request - redirect to clean URL
@@ -498,6 +534,14 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				if challengeSettings.CaptchaChallenge != nil && challengeSettings.CaptchaChallenge.Enabled {
 					if !challengeMgr.ValidateCaptchaChallenge(r) {
 						l7Protection.RecordChallengeFailure(clientIP)
+						
+						// === FORTRESS OFFLOADING: Записываем failure ===
+						if offloadingTracker.RecordFailure(clientIP, "captcha") {
+							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated CAPTCHA challenge failures)", clientIP)
+							atomic.AddUint64(&s.stats.BlockedRequests, 1)
+							return
+						}
+						
 						response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
 						s.sendChallengeResponse(w, response)
 						return
@@ -507,6 +551,9 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 
 						log.Printf("[HTTPS] CAPTCHA challenge passed for IP %s, creating session %s", clientIP, sessionID)
+
+						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
+						offloadingTracker.ResetIP(clientIP)
 
 						// Redirect to the original URL with query parameters
 						redirectURL := r.URL.Path
