@@ -84,6 +84,15 @@ type ChallengeSettings struct {
 	CookieChallenge  *CookieChallenge  `json:"cookieChallenge,omitempty"`
 	JSChallenge      *JSChallenge      `json:"jsChallenge,omitempty"`
 	CaptchaChallenge *CaptchaChallenge `json:"captchaChallenge,omitempty"`
+	// Offloading: автоматическая блокировка повторных нарушителей на kernel level
+	AutoOffloading *AutoOffloading `json:"autoOffloading,omitempty"`
+}
+
+type AutoOffloading struct {
+	Enabled           bool `json:"enabled"`           // Включить автоматический offloading в iptables
+	FailureThreshold  int  `json:"failureThreshold"`  // Количество неудачных попыток (default: 5)
+	TimeWindowSeconds int  `json:"timeWindowSeconds"` // Временное окно в секундах (default: 10)
+	BanDurationMinutes int `json:"banDurationMinutes"` // Длительность бана в минутах (default: 60)
 }
 
 type CookieChallenge struct {
