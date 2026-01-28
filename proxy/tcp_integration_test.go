@@ -37,7 +37,7 @@ func TestTCPProxy_L4Protection(t *testing.T) {
 		}
 
 		// баним IP если превышен лимит
-		err := firewallMgr.BanIP(testIP, 1*time.Minute)
+		err := firewallMgr.BanIP(testIP, 1*time.Minute, "Test ban")
 		if err != nil {
 			t.Logf("BanIP error (expected if not root): %v", err)
 		}

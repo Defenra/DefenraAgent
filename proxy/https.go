@@ -233,7 +233,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 		// Ban IP immediately for HTTP/2 direct connection attacks
 		if s.firewallMgr != nil {
-			if err := s.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+			if err := s.firewallMgr.BanIP(clientIP, 1*time.Hour, "HTTP/2 direct connection attack"); err != nil {
 				log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
 			} else {
 				log.Printf("[HTTPS] Banned IP %s for 1 hour (HTTP/2 direct connection attack)", clientIP)
@@ -647,7 +647,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
-						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute); err != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute, "Rate limit violation (2nd)"); err != nil {
 							log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
 						}
 					}
@@ -661,7 +661,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
-						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute); err != nil {
+						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute, "Rate limit violation (3rd+)"); err != nil {
 							log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
 						}
 					}

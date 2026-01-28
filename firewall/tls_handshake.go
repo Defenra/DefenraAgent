@@ -100,7 +100,7 @@ func (h *HandshakeRateLimiter) AllowHandshake(ip string) bool {
 		// Добавляем в iptables для kernel-level блокировки
 		firewallMgr := GetIPTablesManager()
 		if firewallMgr != nil {
-			go firewallMgr.BanIP(ip, 5*time.Minute)
+			go firewallMgr.BanIP(ip, 5*time.Minute, "TLS handshake flood")
 		}
 
 		return false
@@ -276,7 +276,7 @@ func GetConfigForClientWrapper(
 			if err.Error() == "empty SNI" || err.Error() == "SNI is IP address" {
 				// Это явная атака - банить
 				if firewallMgr != nil {
-					go firewallMgr.BanIP(ip, 1*time.Hour)
+					go firewallMgr.BanIP(ip, 1*time.Hour, "Invalid SNI (empty or IP address)")
 				}
 			} else {
 				// "SNI not in configured domains" - возможно домен есть, но не синхронизирован
@@ -308,7 +308,7 @@ func GetConfigForClientWrapper(
 					ip, tlsFingerprint)
 
 				if firewallMgr != nil {
-					go firewallMgr.BanIP(ip, 24*time.Hour)
+					go firewallMgr.BanIP(ip, 24*time.Hour, "Malicious TLS fingerprint")
 				}
 
 				return nil, errors.New("malicious TLS fingerprint")

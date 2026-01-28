@@ -335,7 +335,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 			log.Printf("[TCP Proxy] Connection blocked: %s", reason)
 			// блокируем через iptables
 			if p.proxyManager.firewallMgr != nil {
-				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour, "TCP connection limit exceeded"); err != nil {
 					log.Printf("[TCP Proxy] Failed to ban IP %s: %v", clientIP, err)
 				}
 			}
@@ -347,7 +347,7 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		if !allowed {
 			log.Printf("[TCP Proxy] Rate limit exceeded: %s", reason)
 			if p.proxyManager.firewallMgr != nil {
-				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour); err != nil {
+				if err := p.proxyManager.firewallMgr.BanIP(clientIP, 1*time.Hour, "TCP rate limit exceeded"); err != nil {
 					log.Printf("[TCP Proxy] Failed to ban IP %s: %v", clientIP, err)
 				}
 			}
