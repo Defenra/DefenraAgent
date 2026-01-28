@@ -174,25 +174,15 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 
 	// Fallback to old GeoDNS map (single agent per location)
 	log.Printf("[DNS] GeoDNS Map: %+v", domainConfig.GeoDNSMap)
+	if domainConfig.GeoDnsFallbackMap != nil && len(domainConfig.GeoDnsFallbackMap) > 0 {
+		log.Printf("[DNS] GeoDNS Fallback Map: %+v", domainConfig.GeoDnsFallbackMap)
+	}
 
-	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
+	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, domainConfig.HTTPProxy.Enabled)
 	if agentIP == "" {
-		log.Printf("[DNS] No agent IP found in GeoDNS map for location: %s", clientLocation)
-
-		// Fallback to first A record
-		for _, record := range domainConfig.DNSRecords {
-			if record.Type == "A" {
-				agentIP = record.Value
-				log.Printf("[DNS] Falling back to A record: %s", agentIP)
-				break
-			}
-		}
-
-		if agentIP == "" {
-			log.Printf("[DNS] No A records available for fallback")
-			s.sendNXDOMAIN(w, r)
-			return
-		}
+		log.Printf("[DNS] No agent IP found for location: %s (HTTP Proxy: %v)", clientLocation, domainConfig.HTTPProxy.Enabled)
+		s.sendNXDOMAIN(w, r)
+		return
 	}
 
 	log.Printf("[DNS] GeoDNS Response: %s (location: %s) → %s", domainConfig.Domain, clientLocation, agentIP)
@@ -290,7 +280,7 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						clientLocation = detectedLocation
 					}
 				}
-				agentIP = findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
+				agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, cnameRecord.HTTPProxyEnabled)
 				log.Printf("[DNS] CNAME Flattening: Using GeoDNS agent selection: %s (location: %s) → %s", queryName, clientLocation, agentIP)
 			}
 
@@ -453,7 +443,7 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 								clientLocation = detectedLocation
 							}
 						}
-						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, clientLocation)
+						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, record.HTTPProxyEnabled)
 						log.Printf("[DNS] Using GeoDNS agent selection for proxied record: %s (location: %s) → %s", queryName, clientLocation, agentIP)
 					}
 
@@ -607,14 +597,22 @@ func extractClientIP(addr net.Addr) string {
 	}
 }
 
-func findBestAgentIP(geoDNSMap map[string]string, clientLocation string) string {
+func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string, clientLocation string, httpProxyEnabled bool) string {
 	// Try exact match first
 	if ip, ok := geoDNSMap[clientLocation]; ok {
 		return ip
 	}
 
-	// Try fallback locations
-	fallbackMap := map[string][]string{
+	// Try Core-provided fallback map (country -> nearest agent)
+	if fallbackMap != nil {
+		if ip, ok := fallbackMap[clientLocation]; ok {
+			log.Printf("[GeoDNS] Using Core fallback map: '%s' -> %s", clientLocation, ip)
+			return ip
+		}
+	}
+
+	// Try hardcoded fallback locations (legacy)
+	fallbackLocations := map[string][]string{
 		"us": {"ca", "mx", "gb", "de"},
 		"ca": {"us", "mx", "gb", "de"},
 		"mx": {"us", "ca", "br", "cl"},
@@ -647,20 +645,40 @@ func findBestAgentIP(geoDNSMap map[string]string, clientLocation string) string 
 		"tr": {"ae", "ir", "eg", "it"},
 		"ir": {"ae", "tr", "kz", "in"},
 		"kz": {"ru", "cn", "ir", "tr"},
+		"cz": {"de", "pl", "at", "sk"}, // Czech Republic -> Germany, Poland, Austria, Slovakia
+		"at": {"de", "cz", "it", "ch"}, // Austria -> Germany, Czech, Italy, Switzerland
+		"sk": {"cz", "pl", "hu", "at"}, // Slovakia -> Czech, Poland, Hungary, Austria
 	}
 
-	if fallbacks, ok := fallbackMap[clientLocation]; ok {
+	if fallbacks, ok := fallbackLocations[clientLocation]; ok {
 		for _, fallback := range fallbacks {
 			if ip, ok := geoDNSMap[fallback]; ok {
-				log.Printf("[GeoDNS] No exact match for '%s', using fallback '%s' -> %s", clientLocation, fallback, ip)
+				log.Printf("[GeoDNS] No exact match for '%s', using hardcoded fallback '%s' -> %s", clientLocation, fallback, ip)
 				return ip
 			}
 		}
 	}
 
-	// Use default if available
+	// CRITICAL: When HTTP proxy is enabled, NEVER return origin IP
+	// Skip "default" key which contains origin IP
+	if httpProxyEnabled {
+		// Return any available agent IP as last resort
+		for location, ip := range geoDNSMap {
+			// Skip "default" key - it contains origin IP
+			if location == "default" {
+				continue
+			}
+			log.Printf("[GeoDNS] HTTP Proxy enabled, using any available agent '%s' -> %s (skipping default/origin)", location, ip)
+			return ip
+		}
+
+		log.Printf("[GeoDNS] HTTP Proxy enabled but no agent IPs available for location '%s'", clientLocation)
+		return ""
+	}
+
+	// HTTP proxy disabled - can use default (origin IP)
 	if ip, ok := geoDNSMap["default"]; ok {
-		log.Printf("[GeoDNS] No match for '%s', using default -> %s", clientLocation, ip)
+		log.Printf("[GeoDNS] No agent match for '%s', using default/origin -> %s", clientLocation, ip)
 		return ip
 	}
 
@@ -670,7 +688,7 @@ func findBestAgentIP(geoDNSMap map[string]string, clientLocation string) string 
 		return ip
 	}
 
-	log.Printf("[GeoDNS] No agent IPs available in GeoDNS map")
+	log.Printf("[GeoDNS] No IPs available in GeoDNS map for location '%s'", clientLocation)
 	return ""
 }
 
