@@ -281,9 +281,11 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	// Get TLS fingerprint for this connection
 	tlsFingerprint := firewall.GetTLSFingerprint(r.RemoteAddr)
 
-	// проверка iptables банов
-	if s.firewallMgr != nil && s.firewallMgr.IsBanned(clientIP) {
-		log.Printf("[HTTPS] Request blocked: IP %s is banned", clientIP)
+	// Проверка банов (только для систем без ipset)
+	// Если ipset+iptables работают, забаненные IP не дойдут до этой точки
+	// Эта проверка нужна только как fallback для систем без ipset
+	if s.firewallMgr != nil && !s.firewallMgr.IsUsingIPSet() && s.firewallMgr.IsBanned(clientIP) {
+		log.Printf("[HTTPS] Request blocked: IP %s is banned (fallback mode)", clientIP)
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
 

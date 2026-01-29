@@ -92,9 +92,10 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 
 	log.Printf("[HTTP] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
 
-	// проверка iptables банов
-	if s.firewallMgr != nil && s.firewallMgr.IsBanned(clientIP) {
-		log.Printf("[HTTP] Request blocked: IP %s is banned", clientIP)
+	// Проверка банов (только для систем без ipset)
+	// Если ipset+iptables работают, забаненные IP не дойдут до этой точки
+	if s.firewallMgr != nil && !s.firewallMgr.IsUsingIPSet() && s.firewallMgr.IsBanned(clientIP) {
+		log.Printf("[HTTP] Request blocked: IP %s is banned (fallback mode)", clientIP)
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
 

@@ -320,10 +320,11 @@ func (p *TCPProxy) handleConnection(clientConn net.Conn) {
 		log.Printf("[TCP Proxy] Connection closed: %s (duration: %v)", clientIP, duration)
 	}()
 
-	// проверка iptables банов
+	// Проверка банов (только для систем без ipset)
+	// Если ipset+iptables работают, забаненные IP не дойдут до этой точки
 	if p.proxyManager != nil && p.proxyManager.firewallMgr != nil {
-		if p.proxyManager.firewallMgr.IsBanned(clientIP) {
-			log.Printf("[TCP Proxy] Connection blocked: IP %s is banned", clientIP)
+		if !p.proxyManager.firewallMgr.IsUsingIPSet() && p.proxyManager.firewallMgr.IsBanned(clientIP) {
+			log.Printf("[TCP Proxy] Connection blocked: IP %s is banned (fallback mode)", clientIP)
 			return
 		}
 	}

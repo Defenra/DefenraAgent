@@ -222,13 +222,9 @@ func (m *IPTablesManager) IsBanned(ip string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Check in-memory cache first
-	expiresAt, exists := m.bannedIPs[ip]
-	if exists && time.Now().Before(expiresAt) {
-		return true
-	}
-
-	// Check in ipset if available
+	// If using ipset, check ipset ONLY (not in-memory cache)
+	// This ensures we check the actual kernel state, not our local cache
+	// In-memory cache is only used for fallback mode (no ipset)
 	if m.useIPSet {
 		// Check permanent blacklist
 		cmd := exec.Command("ipset", "test", m.blacklistSet, ip)
@@ -241,7 +237,9 @@ func (m *IPTablesManager) IsBanned(ip string) bool {
 		return cmd.Run() == nil
 	}
 
-	return false
+	// Fallback mode (no ipset): check in-memory cache
+	expiresAt, exists := m.bannedIPs[ip]
+	return exists && time.Now().Before(expiresAt)
 }
 
 func (m *IPTablesManager) cleanupExpired() {
