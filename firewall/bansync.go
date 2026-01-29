@@ -230,14 +230,15 @@ func (bsm *BanSyncManager) applyGlobalBans(bans []GlobalBan) {
 
 		duration := ban.ExpiresAt.Sub(now)
 
-		// Apply ban
+		// Apply ban WITHOUT reporting back to Core (prevents infinite loop)
+		// reportToSync = false means this ban came from Core, don't send it back
 		var err error
 		if ban.IsCIDR {
-			err = bsm.iptablesManager.BanIPRange(ban.IP, duration, ban.Reason+" (global)")
+			err = bsm.iptablesManager.BanIPRangeWithSync(ban.IP, duration, ban.Reason+" (global)", false)
 		} else if ban.IsPermanent {
-			err = bsm.iptablesManager.AddToPermanentBlacklist(ban.IP, ban.Reason+" (global)")
+			err = bsm.iptablesManager.AddToPermanentBlacklistWithSync(ban.IP, ban.Reason+" (global)", false)
 		} else {
-			err = bsm.iptablesManager.BanIP(ban.IP, duration, ban.Reason+" (global)")
+			err = bsm.iptablesManager.BanIPWithSync(ban.IP, duration, ban.Reason+" (global)", false)
 		}
 
 		if err != nil {
