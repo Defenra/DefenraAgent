@@ -48,10 +48,11 @@ func (l *FirewallListener) Accept() (net.Conn, error) {
 			continue // Пробуем принять следующее соединение
 		}
 
-		// === КРИТИЧЕСКАЯ ПРОВЕРКА #2: IP в черном списке (iptables) ===
-		// Проверяем ДО TLS handshake - экономим CPU на криптографии
+		// === КРИТИЧЕСКАЯ ПРОВЕРКА #2: IP в черном списке (fallback для систем без ipset) ===
+		// Если ipset+iptables работают, эта проверка избыточна (IP уже заблокирован на уровне ядра)
+		// Но для систем без ipset это единственная защита
 		firewallMgr := GetIPTablesManager()
-		if firewallMgr != nil && firewallMgr.IsBanned(remoteIP) {
+		if firewallMgr != nil && !firewallMgr.IsUsingIPSet() && firewallMgr.IsBanned(remoteIP) {
 			conn.Close()
 			atomic.AddUint64(&l.rejectedConns, 1)
 			// Не логируем каждую блокировку - слишком много спама
