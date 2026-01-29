@@ -105,6 +105,10 @@ func (m *IPTablesManager) BanIP(ip string, duration time.Duration, reason string
 	expiresAt := time.Now().Add(duration)
 	m.bannedIPs[ip] = expiresAt
 
+	// Report ban to sync manager for distribution to other agents
+	banSync := GetBanSyncManager()
+	banSync.ReportBan(ip, reason, expiresAt, false, false)
+
 	if m.useIPSet {
 		// Use ipset (O(1) lookup, efficient for millions of IPs)
 		return m.banIPWithIPSet(ip, duration, reason)
@@ -333,6 +337,12 @@ func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration, reason
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	expiresAt := time.Now().Add(duration)
+
+	// Report CIDR ban to sync manager
+	banSync := GetBanSyncManager()
+	banSync.ReportBan(cidr, reason, expiresAt, false, true)
+
 	if m.useIPSet {
 		return m.banIPRangeWithIPSet(cidr, duration, reason)
 	} else {
@@ -388,6 +398,11 @@ func (m *IPTablesManager) AddToPermanentBlacklist(ip string, reason string) erro
 	if reason == "" {
 		reason = "Permanent ban"
 	}
+
+	// Report permanent ban to sync manager (expires in 100 years for practical purposes)
+	banSync := GetBanSyncManager()
+	expiresAt := time.Now().Add(100 * 365 * 24 * time.Hour)
+	banSync.ReportBan(ip, reason, expiresAt, true, false)
 
 	comment := fmt.Sprintf("Reason: %s | Banned at %s", reason, time.Now().Format(time.RFC3339))
 
