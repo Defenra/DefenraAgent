@@ -103,6 +103,15 @@ func main() {
 	agentDiscovery := proxy.GetAgentDiscovery(coreURL, agentKey)
 	_ = agentDiscovery // Discovery starts automatically
 
+	// Initialize ban synchronization manager
+	log.Println("[BanSync] Initializing ban synchronization...")
+	banSyncManager := firewall.GetBanSyncManager()
+	banSyncManager.SetConfig(coreURL, agentKey)
+	log.Println("[BanSync] Starting ban sync (every 30 seconds)...")
+	utils.SafeGo(func() {
+		banSyncManager.StartSync()
+	}, "BanSync")
+
 	// настраиваем статистику коллектор ПЕРЕД запуском горутин
 	log.Println("[Stats] Initializing statistics collector...")
 	statsCollector := stats.GetCollector()
