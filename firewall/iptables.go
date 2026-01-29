@@ -91,6 +91,13 @@ func (m *IPTablesManager) ensureChainLegacy(chainName string) error {
 }
 
 func (m *IPTablesManager) BanIP(ip string, duration time.Duration, reason string) error {
+	return m.BanIPWithSync(ip, duration, reason, true)
+}
+
+// BanIPWithSync bans an IP with optional sync reporting
+// reportToSync: if true, report ban to Core for distribution to other agents
+// if false, skip reporting (used when applying global bans from Core)
+func (m *IPTablesManager) BanIPWithSync(ip string, duration time.Duration, reason string, reportToSync bool) error {
 	if duration <= 0 {
 		duration = 24 * time.Hour
 	}
@@ -105,9 +112,12 @@ func (m *IPTablesManager) BanIP(ip string, duration time.Duration, reason string
 	expiresAt := time.Now().Add(duration)
 	m.bannedIPs[ip] = expiresAt
 
-	// Report ban to sync manager for distribution to other agents
-	banSync := GetBanSyncManager()
-	banSync.ReportBan(ip, reason, expiresAt, false, false)
+	// Only report to sync if this is a local ban (not from global sync)
+	// This prevents infinite loop: local ban -> Core -> other agents -> Core -> ...
+	if reportToSync {
+		banSync := GetBanSyncManager()
+		banSync.ReportBan(ip, reason, expiresAt, false, false)
+	}
 
 	if m.useIPSet {
 		// Use ipset (O(1) lookup, efficient for millions of IPs)
@@ -326,6 +336,11 @@ func (m *IPTablesManager) Stop() {
 
 // BanIPRange blocks IP range (CIDR)
 func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration, reason string) error {
+	return m.BanIPRangeWithSync(cidr, duration, reason, true)
+}
+
+// BanIPRangeWithSync blocks IP range with optional sync reporting
+func (m *IPTablesManager) BanIPRangeWithSync(cidr string, duration time.Duration, reason string, reportToSync bool) error {
 	if duration <= 0 {
 		duration = 24 * time.Hour
 	}
@@ -339,9 +354,11 @@ func (m *IPTablesManager) BanIPRange(cidr string, duration time.Duration, reason
 
 	expiresAt := time.Now().Add(duration)
 
-	// Report CIDR ban to sync manager
-	banSync := GetBanSyncManager()
-	banSync.ReportBan(cidr, reason, expiresAt, false, true)
+	// Only report to sync if this is a local ban
+	if reportToSync {
+		banSync := GetBanSyncManager()
+		banSync.ReportBan(cidr, reason, expiresAt, false, true)
+	}
 
 	if m.useIPSet {
 		return m.banIPRangeWithIPSet(cidr, duration, reason)
@@ -390,19 +407,26 @@ func (m *IPTablesManager) banIPRangeWithIPTables(cidr string, reason string) err
 
 // AddToPermanentBlacklist adds IP to permanent blacklist (no timeout)
 func (m *IPTablesManager) AddToPermanentBlacklist(ip string, reason string) error {
+	return m.AddToPermanentBlacklistWithSync(ip, reason, true)
+}
+
+// AddToPermanentBlacklistWithSync adds IP to permanent blacklist with optional sync reporting
+func (m *IPTablesManager) AddToPermanentBlacklistWithSync(ip string, reason string, reportToSync bool) error {
 	if !m.useIPSet {
 		log.Printf("[Firewall] Permanent blacklist requires ipset, falling back to 24h ban")
-		return m.BanIP(ip, 24*time.Hour, reason)
+		return m.BanIPWithSync(ip, 24*time.Hour, reason, reportToSync)
 	}
 
 	if reason == "" {
 		reason = "Permanent ban"
 	}
 
-	// Report permanent ban to sync manager (expires in 100 years for practical purposes)
-	banSync := GetBanSyncManager()
-	expiresAt := time.Now().Add(100 * 365 * 24 * time.Hour)
-	banSync.ReportBan(ip, reason, expiresAt, true, false)
+	// Only report to sync if this is a local ban
+	if reportToSync {
+		banSync := GetBanSyncManager()
+		expiresAt := time.Now().Add(100 * 365 * 24 * time.Hour)
+		banSync.ReportBan(ip, reason, expiresAt, true, false)
+	}
 
 	comment := fmt.Sprintf("Reason: %s | Banned at %s", reason, time.Now().Format(time.RFC3339))
 
