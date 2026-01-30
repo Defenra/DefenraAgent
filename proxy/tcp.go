@@ -514,16 +514,28 @@ func (pm *ProxyManager) startUDPProxy(proxyConfig config.Proxy) {
 func handleUDPProxy(conn *net.UDPConn, proxyConfig config.Proxy) {
 	defer conn.Close()
 
-	buffer := make([]byte, 65535)
+	// Buffer pool for UDP packets to reduce GC pressure under high load
+	bufferPool := sync.Pool{
+		New: func() interface{} {
+			return make([]byte, 65535)
+		},
+	}
 
 	for {
+		buffer := bufferPool.Get().([]byte)
 		n, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			log.Printf("[UDP Proxy] Read error: %v", err)
+			bufferPool.Put(buffer)
 			continue
 		}
 
-		go forwardUDP(conn, clientAddr, buffer[:n], proxyConfig)
+		// Copy data to prevent race condition with buffer reuse
+		data := make([]byte, n)
+		copy(data, buffer[:n])
+		bufferPool.Put(buffer)
+
+		go forwardUDP(conn, clientAddr, data, proxyConfig)
 	}
 }
 

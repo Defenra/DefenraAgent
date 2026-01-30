@@ -1034,26 +1034,48 @@ func (s *HTTPSProxyServer) sendChallengeResponse(w http.ResponseWriter, response
 	}
 	w.WriteHeader(response.StatusCode)
 
-	// Write body with timeout protection
-	// If client is not reading (slow loris attack), this will timeout
-	done := make(chan bool, 1)
-	go func() {
+	// Write body with timeout protection using http.Flusher to detect client disconnects
+	// This prevents goroutine leaks when clients don't read responses (slowloris attacks)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// Fallback: direct write without flush (may hang on slow clients)
 		if _, err := w.Write([]byte(response.Body)); err != nil {
 			log.Printf("[HTTPS] Error writing challenge response body: %v", err)
 		}
-		done <- true
-	}()
+		return
+	}
 
-	// Wait max 5 seconds for write to complete
-	select {
-	case <-done:
-		// Write completed successfully
-		return
-	case <-time.After(5 * time.Second):
-		// Write timeout - client not reading
-		// Connection will be closed by HTTP server
-		log.Printf("[HTTPS] Challenge response write timeout - client not reading")
-		return
+	// Write in chunks with periodic flushing to detect disconnects
+	bodyBytes := []byte(response.Body)
+	chunkSize := 1024 // 1KB chunks
+	totalWritten := 0
+	start := time.Now()
+	maxDuration := 5 * time.Second
+
+	for totalWritten < len(bodyBytes) {
+		// Check if we've exceeded max duration
+		if time.Since(start) > maxDuration {
+			log.Printf("[HTTPS] Challenge response write timeout - client not reading")
+			return
+		}
+
+		// Calculate chunk bounds
+		end := totalWritten + chunkSize
+		if end > len(bodyBytes) {
+			end = len(bodyBytes)
+		}
+
+		// Write chunk
+		n, err := w.Write(bodyBytes[totalWritten:end])
+		if err != nil {
+			// Client disconnected or error
+			return
+		}
+
+		// Flush to force data to wire and detect disconnect
+		flusher.Flush()
+
+		totalWritten += n
 	}
 }
 

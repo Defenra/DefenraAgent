@@ -54,15 +54,17 @@ func (rl *RateLimiter) CheckRateLimit(ip string, config RateLimitConfig) (bool, 
 		return false, fmt.Sprintf("rate limit exceeded, blocked for %v", remaining)
 	}
 
-	// удаляем старые запросы
+	// удаляем старые запросы (inplace фильтрация для уменьшения аллокаций)
 	windowStart := now.Add(-time.Duration(config.WindowSeconds) * time.Second)
-	validRequests := tracker.requests[:0]
+	validIdx := 0
 	for _, reqTime := range tracker.requests {
 		if reqTime.After(windowStart) {
-			validRequests = append(validRequests, reqTime)
+			tracker.requests[validIdx] = reqTime
+			validIdx++
 		}
 	}
-	tracker.requests = validRequests
+	// Обрезаем слайс до валидных элементов (reuse underlying array)
+	tracker.requests = tracker.requests[:validIdx]
 
 	// проверяем лимит
 	if len(tracker.requests) >= config.MaxRequests {

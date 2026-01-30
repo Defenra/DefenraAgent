@@ -13,22 +13,34 @@ import (
 
 var (
 	// Global TLS fingerprint storage
-	tlsFingerprintMu sync.RWMutex
-	tlsFingerprints  = make(map[string]string) // remoteAddr -> fingerprint
+	tlsFingerprintMu   sync.RWMutex
+	tlsFingerprints    = make(map[string]tlsFingerprintEntry) // remoteAddr -> fingerprint with timestamp
+	tlsFingerprintStop = make(chan struct{})
 )
+
+type tlsFingerprintEntry struct {
+	Fingerprint string
+	Timestamp   time.Time
+}
 
 // StoreTLSFingerprint stores a TLS fingerprint for a connection
 func StoreTLSFingerprint(remoteAddr, fingerprint string) {
 	tlsFingerprintMu.Lock()
 	defer tlsFingerprintMu.Unlock()
-	tlsFingerprints[remoteAddr] = fingerprint
+	tlsFingerprints[remoteAddr] = tlsFingerprintEntry{
+		Fingerprint: fingerprint,
+		Timestamp:   time.Now(),
+	}
 }
 
 // GetTLSFingerprint retrieves a TLS fingerprint for a connection
 func GetTLSFingerprint(remoteAddr string) string {
 	tlsFingerprintMu.RLock()
 	defer tlsFingerprintMu.RUnlock()
-	return tlsFingerprints[remoteAddr]
+	if entry, exists := tlsFingerprints[remoteAddr]; exists {
+		return entry.Fingerprint
+	}
+	return ""
 }
 
 // CleanupTLSFingerprint removes a TLS fingerprint for a connection
@@ -36,6 +48,50 @@ func CleanupTLSFingerprint(remoteAddr string) {
 	tlsFingerprintMu.Lock()
 	defer tlsFingerprintMu.Unlock()
 	delete(tlsFingerprints, remoteAddr)
+}
+
+// init starts automatic cleanup of TLS fingerprint cache
+func init() {
+	go tlsFingerprintCleanup()
+}
+
+// tlsFingerprintCleanup periodically removes old TLS fingerprint entries
+func tlsFingerprintCleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			tlsFingerprintMu.Lock()
+			now := time.Now()
+			var toDelete []string
+
+			for remoteAddr, entry := range tlsFingerprints {
+				// Remove entries older than 30 minutes
+				if now.Sub(entry.Timestamp) > 30*time.Minute {
+					toDelete = append(toDelete, remoteAddr)
+				}
+			}
+
+			for _, remoteAddr := range toDelete {
+				delete(tlsFingerprints, remoteAddr)
+			}
+
+			if len(toDelete) > 0 {
+				log.Printf("[TLS-Fingerprint] Cleaned up %d old entries", len(toDelete))
+			}
+			tlsFingerprintMu.Unlock()
+
+		case <-tlsFingerprintStop:
+			return
+		}
+	}
+}
+
+// StopTLSFingerprintCleanup stops the cleanup goroutine (for testing)
+func StopTLSFingerprintCleanup() {
+	close(tlsFingerprintStop)
 }
 
 type L7Protection struct {
