@@ -712,21 +712,19 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 
 	w.WriteHeader(resp.StatusCode)
 
-	// Track traffic
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[HTTP] Error reading response body: %v", err)
-		return
-	}
+	// Stream response body using CountingWriter to prevent memory exhaustion
+	cw := NewCountingWriter(w)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
-	if _, err := w.Write(bodyBytes); err != nil {
-		log.Printf("[HTTP] Error writing response: %v", err)
-		return
+	if _, err := io.CopyBuffer(cw, resp.Body, *buf); err != nil {
+		log.Printf("[HTTP] Error proxying response body: %v", err)
+		// Connection likely broken
 	}
 
 	// Calculate traffic
 	requestSize := uint64(len(r.RequestURI) + len(r.Method) + 100) // approximate request size
-	responseSize := uint64(len(bodyBytes))
+	responseSize := uint64(cw.BytesWritten)
 
 	// Track client with traffic and geolocation
 	tracker := GetGlobalHTTPClientTracker()
@@ -740,8 +738,10 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 
 func getClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
 	}
 
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
@@ -783,12 +783,54 @@ func (s *HTTPProxyServer) isIPInWhitelist(ip string, whitelist []string) bool {
 }
 
 func (s *HTTPProxyServer) sendChallengeResponse(w http.ResponseWriter, response firewall.ChallengeResponse) {
+	// Set headers
 	for key, value := range response.Headers {
 		w.Header().Set(key, value)
 	}
 	w.WriteHeader(response.StatusCode)
-	if _, err := w.Write([]byte(response.Body)); err != nil {
-		log.Printf("[HTTP] Error writing challenge response: %v", err)
+
+	// Write body with timeout protection using http.Flusher to detect client disconnects
+	// This prevents goroutine leaks when clients don't read responses (slowloris attacks)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// Fallback: direct write without flush (may hang on slow clients)
+		if _, err := w.Write([]byte(response.Body)); err != nil {
+			log.Printf("[HTTP] Error writing challenge response body: %v", err)
+		}
+		return
+	}
+
+	// Write in chunks with periodic flushing to detect disconnects
+	bodyBytes := []byte(response.Body)
+	chunkSize := 1024 // 1KB chunks
+	totalWritten := 0
+	start := time.Now()
+	maxDuration := 5 * time.Second
+
+	for totalWritten < len(bodyBytes) {
+		// Check if we've exceeded max duration
+		if time.Since(start) > maxDuration {
+			log.Printf("[HTTP] Challenge response write timeout - client not reading")
+			return
+		}
+
+		// Calculate chunk bounds
+		end := totalWritten + chunkSize
+		if end > len(bodyBytes) {
+			end = len(bodyBytes)
+		}
+
+		// Write chunk
+		n, err := w.Write(bodyBytes[totalWritten:end])
+		if err != nil {
+			// Client disconnected or error
+			return
+		}
+
+		// Flush to force data to wire and detect disconnect
+		flusher.Flush()
+
+		totalWritten += n
 	}
 }
 

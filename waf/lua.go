@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -13,6 +14,7 @@ type LuaWAF struct {
 	pool        *sync.Pool
 	sharedCache map[string]interface{}
 	cacheMutex  *sync.RWMutex
+	scriptCache sync.Map // Cache for compiled Lua scripts: map[string]*lua.FunctionProto
 }
 
 type WAFResponse struct {
@@ -23,7 +25,7 @@ type WAFResponse struct {
 }
 
 func NewLuaWAF() *LuaWAF {
-	return &LuaWAF{
+	waf := &LuaWAF{
 		pool: &sync.Pool{
 			New: func() interface{} {
 				return lua.NewState()
@@ -31,6 +33,29 @@ func NewLuaWAF() *LuaWAF {
 		},
 		sharedCache: make(map[string]interface{}),
 		cacheMutex:  &sync.RWMutex{},
+	}
+	waf.StartCleanup()
+	return waf
+}
+
+func (w *LuaWAF) StartCleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	go func() {
+		for range ticker.C {
+			w.cleanupSharedCache()
+		}
+	}()
+}
+
+func (w *LuaWAF) cleanupSharedCache() {
+	w.cacheMutex.Lock()
+	defer w.cacheMutex.Unlock()
+
+	// Simple cleanup: if cache is too large, clear it completely
+	// A better approach would be LRU, but this prevents OOM
+	if len(w.sharedCache) > 10000 {
+		w.sharedCache = make(map[string]interface{})
+		log.Println("[WAF] Shared cache cleared (size limit exceeded)")
 	}
 }
 

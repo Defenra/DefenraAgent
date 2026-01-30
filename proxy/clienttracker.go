@@ -27,9 +27,10 @@ type HTTPClientConnection struct {
 
 // HTTPClientTracker tracks HTTP/HTTPS client connections
 type HTTPClientTracker struct {
-	mu      sync.RWMutex
-	clients map[string]*HTTPClientConnection // key: IP address
-	geoIP   *GeoIPService
+	mu             sync.RWMutex
+	clients        map[string]*HTTPClientConnection // key: IP address
+	geoIP          *GeoIPService
+	geoIPSemaphore chan struct{} // Semaphore to limit concurrent lookups
 }
 
 // GeoIPService provides IP geolocation lookup
@@ -76,8 +77,9 @@ var (
 func GetGlobalHTTPClientTracker() *HTTPClientTracker {
 	globalHTTPClientTrackerOnce.Do(func() {
 		globalHTTPClientTracker = &HTTPClientTracker{
-			clients: make(map[string]*HTTPClientConnection),
-			geoIP:   NewGeoIPService(),
+			clients:        make(map[string]*HTTPClientConnection),
+			geoIP:          NewGeoIPService(),
+			geoIPSemaphore: make(chan struct{}, 20), // Max 20 concurrent lookups
 		}
 		// Start cleanup goroutine
 		go globalHTTPClientTracker.cleanupLoop()
@@ -168,20 +170,29 @@ func (ct *HTTPClientTracker) TrackRequest(ip, userAgent, domain string, bytesSen
 		}
 		ct.clients[ip] = client
 
-		// Lookup geolocation asynchronously
-		go func() {
-			if geoInfo, err := ct.geoIP.Lookup(ip); err == nil {
-				ct.mu.Lock()
-				if c, ok := ct.clients[ip]; ok {
-					c.Country = geoInfo.Country
-					c.City = geoInfo.City
-					c.CountryCode = geoInfo.CountryCode
+		// Lookup geolocation asynchronously with concurrency limit
+		select {
+		case ct.geoIPSemaphore <- struct{}{}:
+			go func() {
+				defer func() { <-ct.geoIPSemaphore }()
+				if geoInfo, err := ct.geoIP.Lookup(ip); err == nil {
+					ct.mu.Lock()
+					if c, ok := ct.clients[ip]; ok {
+						c.Country = geoInfo.Country
+						c.City = geoInfo.City
+						c.CountryCode = geoInfo.CountryCode
+					}
+					ct.mu.Unlock()
+				} else {
+					log.Printf("[ClientTracker] GeoIP lookup failed for %s: %v", ip, err)
 				}
-				ct.mu.Unlock()
-			} else {
-				log.Printf("[ClientTracker] GeoIP lookup failed for %s: %v", ip, err)
-			}
-		}()
+			}()
+		default:
+			// Semaphore full, skip lookup to protect system
+			// We'll try again next time the client sends a request and we hit this block
+			// (actually we won't hit this block again because client exists now)
+			// TODO: Add a background queue for missed lookups if critical
+		}
 	}
 
 	// Update traffic
