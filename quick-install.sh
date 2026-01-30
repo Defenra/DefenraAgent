@@ -474,7 +474,7 @@ vm.dirty_background_ratio = 5
 SYSCTL_EOF
 
 # Apply sysctl settings
-sysctl -p /etc/sysctl.d/99-defenra.conf > /dev/null 2>&1
+sysctl -p /etc/sysctl.d/99-defenra.conf 2>&1 | grep -v "No such file" || true
 print_success "Kernel tuning applied"
 
 # ============================================================================
