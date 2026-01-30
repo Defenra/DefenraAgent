@@ -79,7 +79,7 @@ func TestSelectBestAgent_ConsistentHashing(t *testing.T) {
 			{AgentID: "agent3"},
 		}
 		ip := "203.0.113.50"
-		
+
 		first := selectBestAgent(agents, ip)
 		for i := 0; i < 10; i++ {
 			next := selectBestAgent(agents, ip)

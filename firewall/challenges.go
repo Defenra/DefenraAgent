@@ -199,11 +199,15 @@ func (cm *ChallengeManager) ValidateCookieChallenge(r *http.Request, clientIP st
 
 	isValid := cookie.Value == expectedCookie
 
-	// If cookie challenge is valid, clear violations for this IP
+	// If cookie challenge is valid, clear violations for this IP and mark as trusted
 	if isValid {
 		violationTracker := GetViolationTracker()
 		violationTracker.ClearViolations(clientIP)
-		log.Printf("[Challenge] Cookie challenge passed, cleared violations for IP: %s", clientIP)
+
+		// Mark IP as trusted for grace period (prevents false positives from parallel resource requests)
+		GetChallengeOffloadingTracker().RecordSuccess(clientIP)
+
+		log.Printf("[Challenge] Cookie challenge passed, cleared violations and activated grace period for IP: %s", clientIP)
 	}
 
 	return isValid
@@ -281,7 +285,11 @@ func (cm *ChallengeManager) ValidateJSChallenge(r *http.Request, difficulty int)
 		if clientIP != "" {
 			violationTracker := GetViolationTracker()
 			violationTracker.ClearViolations(clientIP)
-			log.Printf("[Challenge] JS PoW solved successfully, cleared violations for IP: %s", clientIP)
+
+			// Mark IP as trusted for grace period (prevents false positives from parallel resource requests)
+			GetChallengeOffloadingTracker().RecordSuccess(clientIP)
+
+			log.Printf("[Challenge] JS PoW solved successfully, cleared violations and activated grace period for IP: %s", clientIP)
 		}
 	}
 
@@ -425,7 +433,11 @@ func (cm *ChallengeManager) ValidateCaptchaChallenge(r *http.Request) bool {
 		if clientIP != "" {
 			violationTracker := GetViolationTracker()
 			violationTracker.ClearViolations(clientIP)
-			log.Printf("[Challenge] CAPTCHA solved successfully, cleared violations for IP: %s", clientIP)
+
+			// Mark IP as trusted for grace period (prevents false positives from parallel resource requests)
+			GetChallengeOffloadingTracker().RecordSuccess(clientIP)
+
+			log.Printf("[Challenge] CAPTCHA solved successfully, cleared violations and activated grace period for IP: %s", clientIP)
 		}
 	}
 
@@ -1308,8 +1320,6 @@ func getEmbeddedTemplate() string {
 </html>`
 }
 
-
-
 // Add noise to CAPTCHA image to prevent OCR
 func addNoise(img *image.RGBA) {
 	bounds := img.Bounds()
@@ -1744,7 +1754,12 @@ func getClientIP(r *http.Request) string {
 // CreateSessionAfterChallenge creates a session after successful challenge completion
 func (cm *ChallengeManager) CreateSessionAfterChallenge(clientIP, userAgent, host string) string {
 	sessionManager := GetSessionManager()
-	return sessionManager.CreateSession(clientIP, userAgent, host)
+	sessionID := sessionManager.CreateSession(clientIP, userAgent, host)
+
+	// Mark IP as trusted for grace period (prevents false positives from parallel resource requests)
+	GetChallengeOffloadingTracker().RecordSuccess(clientIP)
+
+	return sessionID
 }
 
 // CreateSessionCookie creates a session cookie for the response
