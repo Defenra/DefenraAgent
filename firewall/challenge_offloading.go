@@ -11,10 +11,12 @@ import (
 type ChallengeOffloadingTracker struct {
 	mu                 sync.RWMutex
 	failures           map[string]*challengeFailureInfo
+	trustedIPs         map[string]time.Time // IP → время последнего успешного challenge
 	enabled            bool
 	failureThreshold   int           // Количество неудачных попыток
 	timeWindow         time.Duration // Временное окно
 	banDuration        time.Duration // Длительность бана
+	trustedWindow      time.Duration // Окно доверия для прошедших challenge (grace period)
 	cleanupInterval    time.Duration
 	stopChan           chan struct{}
 	totalOffloaded     uint64 // Статистика: сколько IP отправлено в iptables
@@ -37,10 +39,12 @@ func GetChallengeOffloadingTracker() *ChallengeOffloadingTracker {
 	globalChallengeOffloadingTrackerOnce.Do(func() {
 		tracker := &ChallengeOffloadingTracker{
 			failures:         make(map[string]*challengeFailureInfo),
+			trustedIPs:       make(map[string]time.Time),
 			enabled:          true,             // По умолчанию включен
 			failureThreshold: 5,                // 5 неудачных попыток
 			timeWindow:       10 * time.Second, // За 10 секунд
 			banDuration:      60 * time.Minute, // Бан на 60 минут
+			trustedWindow:    5 * time.Minute,  // Grace period для доверенных: 5 минут
 			cleanupInterval:  60 * time.Second, // Очистка каждую минуту
 			stopChan:         make(chan struct{}),
 		}
@@ -81,6 +85,19 @@ func (t *ChallengeOffloadingTracker) RecordFailure(ip string, challengeType stri
 
 	if !t.enabled {
 		return false
+	}
+
+	// Проверяем grace period для доверенных пользователей
+	// Если IP успешно проходил challenge в последние 5 минут,
+	// не увеличиваем счетчик failures (это параллельные запросы ресурсов)
+	if lastSuccess, exists := t.trustedIPs[ip]; exists {
+		if time.Since(lastSuccess) < t.trustedWindow {
+			log.Printf("[Challenge-Offloading] IP %s has active grace period (last success: %v ago), ignoring failure for %s challenge",
+				ip, time.Since(lastSuccess), challengeType)
+			return false
+		}
+		// Окно доверия истекло, удаляем запись
+		delete(t.trustedIPs, ip)
 	}
 
 	t.totalFailuresCount++
@@ -164,6 +181,7 @@ func (t *ChallengeOffloadingTracker) cleanup() {
 			t.mu.Lock()
 			now := time.Now()
 			var toDelete []string
+			var trustedDeleted int
 
 			for ip, info := range t.failures {
 				// Удаляем записи старше banDuration (если offloaded)
@@ -181,8 +199,17 @@ func (t *ChallengeOffloadingTracker) cleanup() {
 				delete(t.failures, ip)
 			}
 
-			if len(toDelete) > 0 {
-				log.Printf("[Challenge-Offloading] Cleaned up %d old entries", len(toDelete))
+			// Очищаем устаревшие записи trustedIPs (старше trustedWindow)
+			for ip, lastSuccess := range t.trustedIPs {
+				if now.Sub(lastSuccess) > t.trustedWindow {
+					delete(t.trustedIPs, ip)
+					trustedDeleted++
+				}
+			}
+
+			if len(toDelete) > 0 || trustedDeleted > 0 {
+				log.Printf("[Challenge-Offloading] Cleaned up %d failure entries, %d trusted entries",
+					len(toDelete), trustedDeleted)
 			}
 
 			t.mu.Unlock()
@@ -210,15 +237,17 @@ func (t *ChallengeOffloadingTracker) GetStats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"enabled":              t.enabled,
-		"total_tracked":        len(t.failures),
-		"offloaded_ips":        offloadedCount,
-		"active_ips":           activeCount,
-		"total_offloaded":      t.totalOffloaded,
-		"total_failures":       t.totalFailuresCount,
-		"failure_threshold":    t.failureThreshold,
-		"time_window_seconds":  int(t.timeWindow.Seconds()),
-		"ban_duration_minutes": int(t.banDuration.Minutes()),
+		"enabled":                t.enabled,
+		"total_tracked":          len(t.failures),
+		"offloaded_ips":          offloadedCount,
+		"active_ips":             activeCount,
+		"trusted_ips":            len(t.trustedIPs),
+		"trusted_window_minutes": int(t.trustedWindow.Minutes()),
+		"total_offloaded":        t.totalOffloaded,
+		"total_failures":         t.totalFailuresCount,
+		"failure_threshold":      t.failureThreshold,
+		"time_window_seconds":    int(t.timeWindow.Seconds()),
+		"ban_duration_minutes":   int(t.banDuration.Minutes()),
 	}
 }
 
@@ -233,4 +262,33 @@ func (t *ChallengeOffloadingTracker) ResetIP(ip string) {
 	defer t.mu.Unlock()
 
 	delete(t.failures, ip)
+}
+
+// RecordSuccess записывает успешное прохождение challenge для IP
+// Это активирует grace period для доверенных пользователей
+func (t *ChallengeOffloadingTracker) RecordSuccess(ip string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Удаляем из failures если есть
+	delete(t.failures, ip)
+
+	// Записываем время успешного challenge
+	t.trustedIPs[ip] = time.Now()
+
+	log.Printf("[Challenge-Offloading] IP %s successfully completed challenge, grace period activated for %v",
+		ip, t.trustedWindow)
+}
+
+// IsInGracePeriod проверяет, находится ли IP в grace period (недавно прошел challenge)
+func (t *ChallengeOffloadingTracker) IsInGracePeriod(ip string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if lastSuccess, exists := t.trustedIPs[ip]; exists {
+		if time.Since(lastSuccess) < t.trustedWindow {
+			return true
+		}
+	}
+	return false
 }
