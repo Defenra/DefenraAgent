@@ -1001,21 +1001,19 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 
 	w.WriteHeader(resp.StatusCode)
 
-	// Track traffic
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[HTTPS] Error reading response body: %v", err)
-		return
-	}
+	// Stream response body using CountingWriter to prevent memory exhaustion
+	cw := NewCountingWriter(w)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
-	if _, err := w.Write(bodyBytes); err != nil {
-		log.Printf("[HTTPS] Error writing response: %v", err)
-		return
+	if _, err := io.CopyBuffer(cw, resp.Body, *buf); err != nil {
+		log.Printf("[HTTPS] Error proxying response body: %v", err)
+		// Connection likely broken, nothing more we can do
 	}
 
 	// Calculate traffic
 	requestSize := uint64(len(r.RequestURI) + len(r.Method) + 100) // approximate request size
-	responseSize := uint64(len(bodyBytes))
+	responseSize := uint64(cw.BytesWritten)
 
 	// Track client with traffic and geolocation
 	tracker := GetGlobalHTTPClientTracker()
