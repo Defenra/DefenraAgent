@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
@@ -515,25 +516,29 @@ func handleUDPProxy(conn *net.UDPConn, proxyConfig config.Proxy) {
 	defer conn.Close()
 
 	// Buffer pool for UDP packets to reduce GC pressure under high load
+	// Using pointer to array to avoid allocations (SA6002 compliance)
 	bufferPool := sync.Pool{
 		New: func() interface{} {
-			return make([]byte, 65535)
+			buf := make([]byte, 65535)
+			return &buf[0] // Return pointer to first element
 		},
 	}
 
 	for {
-		buffer := bufferPool.Get().([]byte)
+		ptr := bufferPool.Get().(*byte)
+		// Reconstruct slice from pointer
+		buffer := unsafe.Slice(ptr, 65535)
 		n, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
 			log.Printf("[UDP Proxy] Read error: %v", err)
-			bufferPool.Put(buffer)
+			bufferPool.Put(ptr)
 			continue
 		}
 
 		// Copy data to prevent race condition with buffer reuse
 		data := make([]byte, n)
 		copy(data, buffer[:n])
-		bufferPool.Put(buffer)
+		bufferPool.Put(ptr)
 
 		go forwardUDP(conn, clientAddr, data, proxyConfig)
 	}
