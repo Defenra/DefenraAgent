@@ -16,6 +16,7 @@ import (
 
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
+	"github.com/defenra/agent/logger"
 	"github.com/defenra/agent/waf"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/netutil"
@@ -226,17 +227,18 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	// Block HTTP/2 requests without proper Host/SNI (PRI * requests)
 	// These are malicious attempts to bypass L7 protection
 	if r.Method == "PRI" || (r.Host == "" && r.URL.Host == "") {
-		log.Printf("[HTTPS] HTTP/2 direct connection attack blocked from %s (method=%s, host=%s)",
-			clientIP, r.Method, r.Host)
+		// Use rate-limited logging for attack attempts
+		rlLogger := logger.GetRateLimitedLogger()
+		rlLogger.PrintfLimited("HTTPS_ATTACK", "HTTP/2 direct connection attack from %s (method=%s)", clientIP, r.Method)
 		atomic.AddUint64(&s.stats.BlockedRequests, 1)
 		atomic.AddUint64(&s.stats.FirewallBlocks, 1)
 
 		// Ban IP immediately for HTTP/2 direct connection attacks
 		if s.firewallMgr != nil {
 			if err := s.firewallMgr.BanIP(clientIP, 1*time.Hour, "HTTP/2 direct connection attack"); err != nil {
-				log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
+				logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "Failed to ban IP %s: %v", clientIP, err)
 			} else {
-				log.Printf("[HTTPS] Banned IP %s for 1 hour (HTTP/2 direct connection attack)", clientIP)
+				logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "Banned IP %s for 1 hour (HTTP/2 direct connection attack)", clientIP)
 			}
 		}
 
@@ -276,7 +278,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 		host = host[:idx]
 	}
 
-	log.Printf("[HTTPS] Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
+	logger.GetRateLimitedLogger().PrintfLimited("HTTPS_REQ", "Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
 
 	// Get TLS fingerprint for this connection
 	tlsFingerprint := firewall.GetTLSFingerprint(r.RemoteAddr)
@@ -460,7 +462,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "cookie") {
-							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated cookie challenge failures)", clientIP)
+							logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "IP %s offloaded to iptables (repeated cookie challenge failures)", clientIP)
 							atomic.AddUint64(&s.stats.BlockedRequests, 1)
 							// IP уже заблокирован в iptables, просто закрываем соединение
 							return
@@ -488,7 +490,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "js_pow") {
-							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated JS PoW challenge failures)", clientIP)
+							logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "IP %s offloaded to iptables (repeated JS PoW challenge failures)", clientIP)
 							atomic.AddUint64(&s.stats.BlockedRequests, 1)
 							return
 						}
@@ -501,7 +503,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 
-						log.Printf("[HTTPS] JS PoW challenge passed for IP %s, creating session %s", clientIP, sessionID)
+						logger.GetRateLimitedLogger().PrintfLimited("CHALLENGE", "JS PoW challenge passed for IP %s, creating session %s", clientIP, sessionID)
 
 						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
 						offloadingTracker.ResetIP(clientIP)
@@ -525,12 +527,12 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 							w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 							w.WriteHeader(http.StatusFound)
 
-							log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
+							logger.GetRateLimitedLogger().PrintfLimited("CHALLENGE", "Redirecting to %s with session cookie", redirectURL)
 							return
 						} else {
 							// GET request with valid PoW - set session cookie and continue processing
 							http.SetCookie(w, sessionCookie)
-							log.Printf("[HTTPS] GET request with valid PoW, session created, continuing to origin")
+							logger.GetRateLimitedLogger().PrintfLimited("CHALLENGE", "GET request with valid PoW, session created, continuing to origin")
 							// Continue processing the request normally
 						}
 					}
@@ -543,7 +545,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 						// === FORTRESS OFFLOADING: Записываем failure ===
 						if offloadingTracker.RecordFailure(clientIP, "captcha") {
-							log.Printf("[HTTPS] IP %s offloaded to iptables (repeated CAPTCHA challenge failures)", clientIP)
+							logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "IP %s offloaded to iptables (repeated CAPTCHA challenge failures)", clientIP)
 							atomic.AddUint64(&s.stats.BlockedRequests, 1)
 							return
 						}
@@ -556,7 +558,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						sessionID := challengeMgr.CreateSessionAfterChallenge(clientIP, r.UserAgent(), r.Host)
 						sessionCookie := challengeMgr.CreateSessionCookie(sessionID, r.TLS != nil)
 
-						log.Printf("[HTTPS] CAPTCHA challenge passed for IP %s, creating session %s", clientIP, sessionID)
+						logger.GetRateLimitedLogger().PrintfLimited("CHALLENGE", "CAPTCHA challenge passed for IP %s, creating session %s", clientIP, sessionID)
 
 						// === FORTRESS OFFLOADING: Сбрасываем счетчик при успехе ===
 						offloadingTracker.ResetIP(clientIP)
@@ -573,14 +575,14 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 						w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 						w.WriteHeader(http.StatusFound)
 
-						log.Printf("[HTTPS] Redirecting to %s with session cookie: %s", redirectURL, sessionCookie.String())
+						logger.GetRateLimitedLogger().PrintfLimited("CHALLENGE", "Redirecting to %s with session cookie", redirectURL)
 						return
 					}
 				}
 			default:
 				if suspicionLevel >= 4 {
 					// Block high suspicion requests with beautiful error page
-					log.Printf("[HTTPS] Request blocked: high suspicion level %d", suspicionLevel)
+					logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "Request blocked: high suspicion level %d", suspicionLevel)
 					atomic.AddUint64(&s.stats.BlockedRequests, 1)
 
 					challengeMgr := firewall.GetChallengeManager()
@@ -627,7 +629,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 
 			allowed, reason := s.rateLimiter.CheckRateLimit(clientIP, rateLimitConfig)
 			if !allowed {
-				log.Printf("[HTTPS] Rate limit exceeded for %s: %s", clientIP, reason)
+				logger.GetRateLimitedLogger().PrintfLimited("RATE_LIMIT", "Rate limit exceeded for %s: %s", clientIP, reason)
 				atomic.AddUint64(&s.stats.BlockedRequests, 1)
 				atomic.AddUint64(&s.stats.RateLimitBlocks, 1)
 
@@ -640,35 +642,35 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				switch escalationLevel {
 				case 1:
 					// First violation - show CAPTCHA challenge
-					log.Printf("[HTTPS] Rate limit violation #1 for %s: showing CAPTCHA", clientIP)
+					logger.GetRateLimitedLogger().PrintfLimited("RATE_LIMIT", "Rate limit violation #1 for %s: showing CAPTCHA", clientIP)
 					response := challengeMgr.IssueCaptchaChallenge(w, r, clientIP)
 					s.sendChallengeResponse(w, response)
 					return
 
 				case 2:
 					// Second violation - 10 minute block with error page
-					log.Printf("[HTTPS] Rate limit violation #2 for %s: 10 minute block", clientIP)
+					logger.GetRateLimitedLogger().PrintfLimited("RATE_LIMIT", "Rate limit violation #2 for %s: 10 minute block", clientIP)
 					response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, "Слишком много запросов. Вы заблокированы на 10 минут за превышение лимита скорости.")
 					s.sendChallengeResponse(w, response)
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
 						if err := s.firewallMgr.BanIP(clientIP, 10*time.Minute, "Rate limit violation (2nd)"); err != nil {
-							log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
+							logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "Failed to ban IP %s: %v", clientIP, err)
 						}
 					}
 					return
 
 				case 3:
 					// Third+ violation - 30 minute block with error page
-					log.Printf("[HTTPS] Rate limit violation #3+ for %s: 30 minute block", clientIP)
+					logger.GetRateLimitedLogger().PrintfLimited("RATE_LIMIT", "Rate limit violation #3+ for %s: 30 minute block", clientIP)
 					response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, "Слишком много запросов. Вы заблокированы на 30 минут за повторные нарушения лимита скорости.")
 					s.sendChallengeResponse(w, response)
 
 					// Also ban via iptables for the same duration
 					if s.firewallMgr != nil {
 						if err := s.firewallMgr.BanIP(clientIP, 30*time.Minute, "Rate limit violation (3rd+)"); err != nil {
-							log.Printf("[HTTPS] Failed to ban IP %s: %v", clientIP, err)
+							logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "Failed to ban IP %s: %v", clientIP, err)
 						}
 					}
 					return
@@ -676,7 +678,7 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 				default:
 					// IP is currently blocked, check remaining time
 					if blocked, remaining := violationTracker.IsBlocked(clientIP); blocked {
-						log.Printf("[HTTPS] IP %s still blocked for %v", clientIP, remaining)
+						logger.GetRateLimitedLogger().PrintfLimited("BLOCK", "IP %s still blocked for %v", clientIP, remaining)
 						response := challengeMgr.IssueErrorPage(w, r, clientIP, 429, fmt.Sprintf("Вы заблокированы за превышение лимита скорости. Осталось: %v", remaining.Round(time.Second)))
 						s.sendChallengeResponse(w, response)
 						return
@@ -1021,7 +1023,7 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	tracker.TrackRequest(clientIP, userAgent, host, requestSize, responseSize)
 
 	duration := time.Since(startTime)
-	log.Printf("[HTTPS] Proxied: %s → %s (status: %d, duration: %v, sent: %d, received: %d)",
+	logger.GetRateLimitedLogger().PrintfLimited("HTTPS_PROXY", "Proxied: %s → %s (status: %d, duration: %v, sent: %d, received: %d)",
 		r.Host+r.RequestURI, target, resp.StatusCode, duration, requestSize, responseSize)
 }
 
