@@ -15,6 +15,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -68,34 +69,33 @@ func init() {
 }
 
 func NewChallengeManager() *ChallengeManager {
-	// Try multiple paths for the template file
-	templatePaths := []string{
-		"assets/html/challenge_template.html",
-		"./assets/html/challenge_template.html",
-		"DefenraAgent/assets/html/challenge_template.html",
-		"/opt/defenra-agent/assets/html/challenge_template.html",
-		"/usr/local/bin/assets/html/challenge_template.html",
-	}
-
 	var tmpl *template.Template
-	var err error
 
-	// Try to load template from file
-	loadedFrom := ""
-	for _, path := range templatePaths {
-		tmpl, err = template.ParseFiles(path)
-		if err == nil {
-			loadedFrom = path
-			break
+	// Production: Always use embedded template for consistency and reliability
+	// The embedded template is compiled into the binary and cannot be accidentally modified
+	tmpl = template.Must(template.New("challenge").Parse(getEmbeddedTemplate()))
+	log.Printf("[ChallengeManager] Loaded embedded challenge template (compiled into binary)")
+
+	// Development mode: Allow overriding with file template via environment variable
+	// Set DEFENRA_DEV_TEMPLATE=1 to use file template for development
+	if os.Getenv("DEFENRA_DEV_TEMPLATE") == "1" {
+		// Try multiple paths for the template file (development only)
+		templatePaths := []string{
+			"assets/html/challenge_template.html",
+			"./assets/html/challenge_template.html",
+			"DefenraAgent/assets/html/challenge_template.html",
+			"/opt/defenra-agent/assets/html/challenge_template.html",
+			"/usr/local/bin/assets/html/challenge_template.html",
 		}
-	}
 
-	// If all file paths fail, use embedded template
-	if err != nil {
-		tmpl = template.Must(template.New("challenge").Parse(getEmbeddedTemplate()))
-		log.Printf("[ChallengeManager] Loaded embedded template (file not found in any path)")
-	} else {
-		log.Printf("[ChallengeManager] Loaded template from file: %s", loadedFrom)
+		for _, path := range templatePaths {
+			devTmpl, devErr := template.ParseFiles(path)
+			if devErr == nil {
+				tmpl = devTmpl
+				log.Printf("[ChallengeManager] DEV MODE: Overriding with file template: %s", path)
+				break
+			}
+		}
 	}
 
 	cm := &ChallengeManager{
