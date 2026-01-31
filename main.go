@@ -165,6 +165,14 @@ func main() {
 
 	log.Println("Defenra Agent started successfully")
 
+	// Notify systemd that we're ready
+	health.NotifyReady()
+
+	// Start systemd watchdog to prevent service restarts during normal operation
+	watchdog := health.NewSystemdWatchdog()
+	watchdog.Start()
+	defer watchdog.Stop()
+
 	select {}
 }
 
