@@ -2,25 +2,30 @@
     if (document.getElementById('challenge-form') || window.location.pathname.includes('/challenge')) return;
 
     /* Powered by Defenra Project: https://github.com/Defenra */
-    console.log("[Defenra] System Initialized");
-
+    
     let protectionTriggered = false;
-    const IMAGE_CONCURRENCY = 3; 
+    const IMAGE_CONCURRENCY = 3;
     const queue = [];
     let activeRequests = 0;
+    
+    const stats = {
+        agents: new Set(),
+        totalRequests: 0,
+        blockedRequests: 0,
+        startTime: new Date().toLocaleTimeString()
+    };
 
     function triggerReload(status) {
         if (protectionTriggered) return;
         protectionTriggered = true;
         window.stop();
-        
-        const overlay = document.getElementById('defenra-status');
-        if (overlay) {
-            overlay.style.background = "#d9534f";
-            overlay.innerHTML = "⚠️ Security Challenge Required. Reloading...";
-        }
-
         setTimeout(() => window.location.reload(), 200);
+    }
+
+    function captureAgent(headers) {
+        if (!headers) return;
+        const agent = typeof headers.get === 'function' ? headers.get('d-agent-id') : headers['d-agent-id'];
+        if (agent) stats.agents.add(agent);
     }
 
     function processQueue() {
@@ -28,19 +33,22 @@
 
         const item = queue.shift();
         activeRequests++;
+        stats.totalRequests++;
 
         const img = new Image();
         img.onload = () => {
             item.target.src = item.src;
-            item.target.style.opacity = "1";
             activeRequests--;
             processQueue();
         };
         img.onerror = () => {
             activeRequests--;
             fetch(item.src, { method: 'HEAD', cache: 'no-store' }).then(res => {
-                if (res.status === 403 || res.status === 429) triggerReload(res.status);
-                else processQueue();
+                captureAgent(res.headers);
+                if (res.status === 403 || res.status === 429) {
+                    stats.blockedRequests++;
+                    triggerReload(res.status);
+                } else processQueue();
             }).catch(() => processQueue());
         };
         img.src = item.src;
@@ -53,8 +61,6 @@
                 if (node.tagName === 'IMG' && node.src && !node.dataset.controlled) {
                     const originalSrc = node.src;
                     node.dataset.controlled = "true";
-                    node.style.opacity = "0.3"; 
-                    node.style.transition = "opacity 0.3s";
                     node.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
                     queue.push({ target: node, src: originalSrc });
                     processQueue();
@@ -70,6 +76,7 @@
         if (protectionTriggered) return new Promise(() => {});
         try {
             const response = await originalFetch.apply(this, args);
+            captureAgent(response.headers);
             if (response.status === 403 || response.status === 429) {
                 triggerReload(response.status);
                 return new Promise(() => {});
@@ -87,19 +94,48 @@
     XMLHttpRequest.prototype.send = function() {
         if (protectionTriggered) return;
         this.addEventListener('load', () => {
+            const agent = this.getResponseHeader('d-agent-id');
+            if (agent) stats.agents.add(agent);
             if (this.status === 403 || this.status === 429) triggerReload(this.status);
         });
         return originalXHRSend.apply(this, arguments);
     };
 
-    function injectOverlay() {
-        const div = document.createElement('div');
-        div.id = "defenra-status";
-        div.style = "position:fixed;bottom:20px;left:20px;padding:12px 20px;background:rgba(28,28,28,0.9);color:#fff;z-index:999999;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;box-shadow:0 4px 15px rgba(0,0,0,0.3);display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.1);";
-        div.innerHTML = `<span style="color:#4caf50">●</span> <b>Defenra</b> Protection Active`;
-        document.body.appendChild(div);
+    function toggleDebugMenu() {
+        let menu = document.getElementById('defenra-debug');
+        if (menu) {
+            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        } else {
+            menu = document.createElement('div');
+            menu.id = 'defenra-debug';
+            menu.style = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:350px;background:#1e1e1e;color:#00ff00;padding:20px;border-radius:10px;font-family:monospace;z-index:1000000;box-shadow:0 0 20px rgba(0,0,0,0.5);border:1px solid #333;font-size:12px;line-height:1.5;";
+            updateMenuContent(menu);
+            document.body.appendChild(menu);
+        }
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectOverlay);
-    else injectOverlay();
+    function updateMenuContent(menu) {
+        const agentList = stats.agents.size > 0 ? Array.from(stats.agents).join('<br>→ ') : 'None detected';
+        menu.innerHTML = `
+            <div style="border-bottom:1px solid #333;padding-bottom:10px;margin-bottom:10px;display:flex;justify-content:space-between;">
+                <b>Defenra Debug Menu</b>
+                <span onclick="this.parentElement.parentElement.style.display='none'" style="cursor:pointer;color:#ff0000;">[x]</span>
+            </div>
+            <div><b>Session Start:</b> ${stats.startTime}</div>
+            <div><b>Total Requests:</b> ${stats.totalRequests}</div>
+            <div style="margin-top:10px;color:#00e5ff;"><b>Detected Agents:</b></div>
+            <div style="padding:5px;background:#121212;border-radius:4px;margin-top:5px;max-height:100px;overflow-y:auto;">
+                → ${agentList}
+            </div>
+            <div style="margin-top:10px;font-size:10px;color:#666;text-align:right;">github.com/Defenra</div>
+        `;
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'F8') {
+            toggleDebugMenu();
+            const menu = document.getElementById('defenra-debug');
+            if (menu && menu.style.display !== 'none') updateMenuContent(menu);
+        }
+    });
 })();
