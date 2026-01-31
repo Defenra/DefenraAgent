@@ -23,6 +23,10 @@ import (
 	"github.com/defenra/agent/assets"
 )
 
+// StatusChallenge is HTTP 418 (I'm a teapot) - used for all challenge pages
+// This allows JS detection scripts to consistently identify challenge responses
+const StatusChallenge = 418
+
 // ChallengeResponse represents a challenge response from the firewall
 type ChallengeResponse struct {
 	Blocked    bool
@@ -142,7 +146,7 @@ func (cm *ChallengeManager) IssueCookieChallenge(w http.ResponseWriter, r *http.
 		// Testing mode - return simple redirect
 		return ChallengeResponse{
 			Blocked:    true,
-			StatusCode: http.StatusFound,
+			StatusCode: StatusChallenge,
 			Headers: map[string]string{
 				"Set-Cookie":    cookie.String(),
 				"Location":      r.RequestURI,
@@ -175,7 +179,7 @@ func (cm *ChallengeManager) IssueCookieChallenge(w http.ResponseWriter, r *http.
 		// Fallback to simple redirect if template fails
 		return ChallengeResponse{
 			Blocked:    true,
-			StatusCode: http.StatusFound,
+			StatusCode: StatusChallenge,
 			Headers: map[string]string{
 				"Set-Cookie":    cookie.String(),
 				"Location":      r.RequestURI,
@@ -187,7 +191,7 @@ func (cm *ChallengeManager) IssueCookieChallenge(w http.ResponseWriter, r *http.
 
 	return ChallengeResponse{
 		Blocked:    true,
-		StatusCode: http.StatusOK,
+		StatusCode: StatusChallenge,
 		Headers: map[string]string{
 			"Set-Cookie":    cookie.String(),
 			"Content-Type":  "text/html; charset=utf-8",
@@ -253,7 +257,7 @@ func (cm *ChallengeManager) IssueJSChallenge(w http.ResponseWriter, r *http.Requ
 
 	return ChallengeResponse{
 		Blocked:    true,
-		StatusCode: http.StatusOK,
+		StatusCode: StatusChallenge,
 		Headers: map[string]string{
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -340,7 +344,7 @@ func (cm *ChallengeManager) IssueCaptchaChallenge(w http.ResponseWriter, r *http
 
 	return ChallengeResponse{
 		Blocked:    true,
-		StatusCode: http.StatusOK,
+		StatusCode: StatusChallenge,
 		Headers: map[string]string{
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -581,7 +585,7 @@ func (cm *ChallengeManager) fallbackJSChallenge(publicSalt, target, clientIP, ra
 		log.Printf("[Challenge] CRITICAL: Even fallback template failed: %v", err)
 		return ChallengeResponse{
 			Blocked:    true,
-			StatusCode: http.StatusServiceUnavailable,
+			StatusCode: StatusChallenge,
 			Headers: map[string]string{
 				"Content-Type": "text/plain; charset=utf-8",
 			},
@@ -591,7 +595,7 @@ func (cm *ChallengeManager) fallbackJSChallenge(publicSalt, target, clientIP, ra
 
 	return ChallengeResponse{
 		Blocked:    true,
-		StatusCode: http.StatusOK,
+		StatusCode: StatusChallenge,
 		Headers: map[string]string{
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -622,7 +626,7 @@ func (cm *ChallengeManager) fallbackCaptchaChallenge(captchaData *CaptchaData, a
 		log.Printf("[Challenge] CRITICAL: Even fallback template failed: %v", err)
 		return ChallengeResponse{
 			Blocked:    true,
-			StatusCode: http.StatusServiceUnavailable,
+			StatusCode: StatusChallenge,
 			Headers: map[string]string{
 				"Content-Type": "text/plain; charset=utf-8",
 			},
@@ -632,7 +636,7 @@ func (cm *ChallengeManager) fallbackCaptchaChallenge(captchaData *CaptchaData, a
 
 	return ChallengeResponse{
 		Blocked:    true,
-		StatusCode: http.StatusOK,
+		StatusCode: StatusChallenge,
 		Headers: map[string]string{
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

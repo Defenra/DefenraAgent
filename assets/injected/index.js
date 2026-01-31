@@ -45,7 +45,7 @@
             activeRequests--;
             fetch(item.src, { method: 'HEAD', cache: 'no-store' }).then(res => {
                 captureAgent(res.headers);
-                if (res.status === 403 || res.status === 429) {
+                if (res.status === 418) {
                     stats.blockedRequests++;
                     triggerReload(res.status);
                 } else processQueue();
@@ -77,7 +77,7 @@
         try {
             const response = await originalFetch.apply(this, args);
             captureAgent(response.headers);
-            if (response.status === 403 || response.status === 429) {
+            if (response.status === 418) {
                 triggerReload(response.status);
                 return new Promise(() => {});
             }
@@ -96,7 +96,7 @@
         this.addEventListener('load', () => {
             const agent = this.getResponseHeader('d-agent-id');
             if (agent) stats.agents.add(agent);
-            if (this.status === 403 || this.status === 429) triggerReload(this.status);
+            if (this.status === 418) triggerReload(this.status);
         });
         return originalXHRSend.apply(this, arguments);
     };
