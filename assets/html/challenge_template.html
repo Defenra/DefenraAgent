@@ -1,1 +1,373 @@
-<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>{{.Title}}</title><style>:root{--bg-color:#050505;--card-bg:#0a0a0a;--border-color:#27272a;--border-active:#3f3f46;--text-main:#ededed;--text-muted:#a1a1aa;--text-dark:#52525b;--accent-primary:#3b82f6;--accent-glow:rgba(59,130,246,0.3);--accent-red:#ef4444;--font-main:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;--font-mono:"JetBrains Mono","SF Mono","Menlo",monospace}*{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}body{background-color:var(--bg-color);color:var(--text-main);font-family:var(--font-main);height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;background-image:radial-gradient(circle at 50% 0%,#171717 0%,transparent 70%)}.container{width:100%;max-width:440px;padding:20px;position:relative;z-index:10}.card{background:var(--card-bg);border:1px solid var(--border-color);border-radius:16px;padding:48px 32px 32px 32px;text-align:center;box-shadow:0 0 0 1px rgba(0,0,0,0.2),0 20px 40px -12px rgba(0,0,0,0.8);position:relative;overflow:hidden;transition:border-color .3s ease}.card::after{content:'';position:absolute;top:-50px;left:50%;transform:translateX(-50%);width:200px;height:100px;background:var(--accent-primary);filter:blur(80px);opacity:.15;pointer-events:none;transition:background .5s ease}.card.error-state{border-color:rgba(239,68,68,.3)}.card.error-state::after{background:var(--accent-red)}.loader-container{position:relative;width:60px;height:60px;margin:0 auto 32px auto;display:flex;align-items:center;justify-content:center}.radar-spinner{position:absolute;width:100%;height:100%;border-radius:50%;border:2px solid transparent;border-top-color:var(--accent-primary);border-left-color:var(--accent-primary);box-shadow:0 0 15px var(--accent-glow);animation:spin 1.2s cubic-bezier(.5,.1,.4,.9) infinite}.radar-spinner::after{content:'';position:absolute;top:6px;left:6px;right:6px;bottom:6px;border-radius:50%;border:1px solid rgba(255,255,255,.05)}.radar-pulse{position:absolute;width:60%;height:60%;border-radius:50%;background:var(--accent-primary);filter:blur(8px);opacity:.4;animation:breathe 3s ease-in-out infinite}.error-icon{width:56px;height:56px;margin:0 auto 32px auto;color:var(--accent-red);background:rgba(239,68,68,.1);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(239,68,68,.15)}.error-icon svg{width:28px;height:28px}h1{font-size:22px;font-weight:600;margin-bottom:12px;letter-spacing:-.03em;color:var(--text-main)}p{font-size:14px;line-height:1.6;color:var(--text-muted);margin-bottom:32px}.progress-container{width:100%;background-color:#27272a;border-radius:100px;margin:24px 0 12px 0;height:4px;overflow:hidden}.progress-bar{height:100%;background:var(--accent-primary);border-radius:100px;width:0%;transition:width .3s ease;box-shadow:0 0 10px rgba(59,130,246,.5)}.captcha-container{position:relative;margin:24px 0;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;background:#000}.captcha-image{display:block;max-width:100%;height:auto;mix-blend-mode:screen}.form-row{display:flex;gap:12px;margin-top:16px}.captcha-input{flex:1;background:var(--bg-color);border:1px solid var(--border-color);color:var(--text-main);padding:12px;border-radius:8px;font-size:14px;text-align:center;font-family:var(--font-mono);letter-spacing:1px;transition:all .2s}.captcha-input:focus{outline:0;border-color:var(--accent-primary);background:#0f0f0f;box-shadow:0 0 0 2px rgba(59,130,246,.1)}.action-btn{background:var(--text-main);color:#000;border:0;padding:0 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}.action-btn:hover{opacity:.9;transform:translateY(-1px)}.action-btn:active{transform:translateY(0)}.action-btn.secondary{background:0 0;color:var(--text-muted);border:1px solid var(--border-color);width:100%;padding:12px;margin-top:10px}.action-btn.secondary:hover{color:var(--text-main);border-color:var(--text-muted);transform:none}.tech-info{margin-top:40px;padding-top:24px;border-top:1px solid var(--border-color);font-family:var(--font-mono);font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:12px;opacity:.6;transition:opacity .2s}.tech-info:hover{opacity:1}.info-col{display:flex;flex-direction:column;gap:4px;text-align:left}.info-col:nth-child(even){text-align:right}.info-label{color:var(--text-dark);font-size:10px;text-transform:uppercase;letter-spacing:.05em}.info-value{color:var(--text-muted)}@keyframes spin{to{transform:rotate(360deg)}}@keyframes breathe{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.6;transform:scale(1.1)}}.status-message{font-family:var(--font-mono);font-size:11px;color:var(--text-dark);margin-top:8px;text-align:right}</style></head><body><div class="container"><div class="card{{if .IsError}} error-state{{end}}" id="statusCard">{{if .IsError}}<div class="error-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg></div>{{else if .ShowLoader}}<div class="loader-container"><div class="radar-pulse"></div><div class="radar-spinner"></div></div>{{end}}<h1>{{.Title}}</h1><p>{{.Message}}</p>{{if .ShowProgress}}<div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>{{if .StatusMessage}}<div class="status-message" id="statusMessage">{{.StatusMessage}}</div>{{end}}{{end}}{{if .CaptchaData}}<form method="POST" action="{{.ActionURL}}"><div class="captcha-container"><img src="data:image/png;base64,{{.CaptchaData.ImageData}}" alt="Verification" class="captcha-image"></div><input type="hidden" name="captcha_id" value="{{.CaptchaData.ID}}"><div class="form-row"><input type="text" name="captcha_answer" placeholder="XXXXXX" autocomplete="off" required class="captcha-input" maxlength="6"><button type="submit" class="action-btn">Verify</button></div></form>{{end}}{{if .ShowRetryButton}}<button id="retryBtn" class="action-btn secondary" onclick="window.location.reload()">Try Again</button>{{end}}<div class="tech-info"><div class="info-col"><span class="info-label">Ray ID</span><span class="info-value">{{.RayID}}</span></div><div class="info-col"><span class="info-label">Your IP</span><span class="info-value">{{.ClientIP}}</span></div>{{if .AgentID}}<div class="info-col"><span class="info-label">Node</span><span class="info-value">{{.AgentID}}</span></div><div class="info-col"><span class="info-label">System</span><span class="info-value">Defenra</span></div>{{end}}</div></div></div><script>(function(){document.addEventListener('click',function(e){const t=e.target.closest('button, input[type="submit"]');if(t&&!e.isTrusted){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();return!1}},!0);document.addEventListener('submit',function(e){if(!e.isTrusted){e.preventDefault();e.stopPropagation();return!1}},!0)})();{{.JSCode}}</script></body></html>
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+        <title>{{.Title}}</title>
+        <style>
+            :root {
+                --bg-color: #050505;
+                --card-bg: #0a0a0a;
+                --border-color: #27272a;
+                --border-active: #3f3f46;
+                --text-main: #ededed;
+                --text-muted: #a1a1aa;
+                --text-dark: #52525b;
+                --accent-primary: #3b82f6;
+                --accent-glow: rgba(59, 130, 246, 0.3);
+                --accent-red: #ef4444;
+                --font-main: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+                --font-mono: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                -webkit-font-smoothing: antialiased;
+            }
+            body {
+                background-color: var(--bg-color);
+                color: var(--text-main);
+                font-family: var(--font-main);
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                background-image: radial-gradient(circle at 50% 0%, #171717 0%, transparent 70%);
+            }
+            .container {
+                width: 100%;
+                max-width: 440px;
+                padding: 20px;
+                position: relative;
+                z-index: 10;
+            }
+            .card {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 16px;
+                padding: 48px 32px 32px 32px;
+                text-align: center;
+                box-shadow:
+                    0 0 0 1px rgba(0, 0, 0, 0.2),
+                    0 20px 40px -12px rgba(0, 0, 0, 0.8);
+                position: relative;
+                overflow: hidden;
+                transition: border-color 0.3s ease;
+            }
+            .card::after {
+                content: "";
+                position: absolute;
+                top: -50px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 200px;
+                height: 100px;
+                background: var(--accent-primary);
+                filter: blur(80px);
+                opacity: 0.15;
+                pointer-events: none;
+                transition: background 0.5s ease;
+            }
+            .card.error-state {
+                border-color: rgba(239, 68, 68, 0.3);
+            }
+            .card.error-state::after {
+                background: var(--accent-red);
+            }
+            .loader-container {
+                position: relative;
+                width: 60px;
+                height: 60px;
+                margin: 0 auto 32px auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .radar-spinner {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                border: 2px solid transparent;
+                border-top-color: var(--accent-primary);
+                border-left-color: var(--accent-primary);
+                box-shadow: 0 0 15px var(--accent-glow);
+                animation: spin 1.2s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+            }
+            .radar-spinner::after {
+                content: "";
+                position: absolute;
+                top: 6px;
+                left: 6px;
+                right: 6px;
+                bottom: 6px;
+                border-radius: 50%;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            .radar-pulse {
+                position: absolute;
+                width: 60%;
+                height: 60%;
+                border-radius: 50%;
+                background: var(--accent-primary);
+                filter: blur(8px);
+                opacity: 0.4;
+                animation: breathe 3s ease-in-out infinite;
+            }
+            .error-icon {
+                width: 56px;
+                height: 56px;
+                margin: 0 auto 32px auto;
+                color: var(--accent-red);
+                background: rgba(239, 68, 68, 0.1);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+            }
+            .error-icon svg {
+                width: 28px;
+                height: 28px;
+            }
+            h1 {
+                font-size: 22px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                letter-spacing: -0.03em;
+                color: var(--text-main);
+            }
+            p {
+                font-size: 14px;
+                line-height: 1.6;
+                color: var(--text-muted);
+                margin-bottom: 32px;
+            }
+            .progress-container {
+                width: 100%;
+                background-color: #27272a;
+                border-radius: 100px;
+                margin: 24px 0 12px 0;
+                height: 4px;
+                overflow: hidden;
+            }
+            .progress-bar {
+                height: 100%;
+                background: var(--accent-primary);
+                border-radius: 100px;
+                width: 0%;
+                transition: width 0.3s ease;
+                box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+            }
+            .captcha-container {
+                position: relative;
+                margin: 24px 0;
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                overflow: hidden;
+                background: #000;
+            }
+            .captcha-image {
+                display: block;
+                max-width: 100%;
+                height: auto;
+                mix-blend-mode: screen;
+            }
+            .form-row {
+                display: flex;
+                gap: 12px;
+                margin-top: 16px;
+            }
+            .captcha-input {
+                flex: 1;
+                background: var(--bg-color);
+                border: 1px solid var(--border-color);
+                color: var(--text-main);
+                padding: 12px;
+                border-radius: 8px;
+                font-size: 14px;
+                text-align: center;
+                font-family: var(--font-mono);
+                letter-spacing: 1px;
+                transition: all 0.2s;
+            }
+            .captcha-input:focus {
+                outline: 0;
+                border-color: var(--accent-primary);
+                background: #0f0f0f;
+                box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+            }
+            .action-btn {
+                background: var(--text-main);
+                color: #000;
+                border: 0;
+                padding: 0 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .action-btn:hover {
+                opacity: 0.9;
+                transform: translateY(-1px);
+            }
+            .action-btn:active {
+                transform: translateY(0);
+            }
+            .action-btn.secondary {
+                background: 0 0;
+                color: var(--text-muted);
+                border: 1px solid var(--border-color);
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+            }
+            .action-btn.secondary:hover {
+                color: var(--text-main);
+                border-color: var(--text-muted);
+                transform: none;
+            }
+            .tech-info {
+                margin-top: 40px;
+                padding-top: 24px;
+                border-top: 1px solid var(--border-color);
+                font-family: var(--font-mono);
+                font-size: 11px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+                opacity: 0.6;
+                transition: opacity 0.2s;
+            }
+            .tech-info:hover {
+                opacity: 1;
+            }
+            .info-col {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                text-align: left;
+            }
+            .info-col:nth-child(even) {
+                text-align: right;
+            }
+            .info-label {
+                color: var(--text-dark);
+                font-size: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+            .info-value {
+                color: var(--text-muted);
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+            @keyframes breathe {
+                0%,
+                100% {
+                    opacity: 0.3;
+                    transform: scale(0.8);
+                }
+                50% {
+                    opacity: 0.6;
+                    transform: scale(1.1);
+                }
+            }
+            .status-message {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--text-dark);
+                margin-top: 8px;
+                text-align: right;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="card{{if .IsError}} error-state{{end}}" id="statusCard">
+                {{if .IsError}}
+                <div class="error-icon">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke-width="2"
+                        stroke="currentColor"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                        />
+                    </svg>
+                </div>
+                {{else if .ShowLoader}}
+                <div class="loader-container">
+                    <div class="radar-pulse"></div>
+                    <div class="radar-spinner"></div>
+                </div>
+                {{end}}
+                <h1>{{.Title}}</h1>
+                <p>{{.Message}}</p>
+                {{if .ShowProgress}}
+                <div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
+                {{if .StatusMessage}}
+                <div class="status-message" id="statusMessage">{{.StatusMessage}}</div>
+                {{end}}{{end}}{{if .CaptchaData}}
+                <form method="POST" action="{{.ActionURL}}">
+                    <div class="captcha-container">
+                        <img
+                            src="data:image/png;base64,{{.CaptchaData.ImageData}}"
+                            alt="Verification"
+                            class="captcha-image"
+                        />
+                    </div>
+                    <input type="hidden" name="captcha_id" value="{{.CaptchaData.ID}}" />
+                    <div class="form-row">
+                        <input
+                            type="text"
+                            name="captcha_answer"
+                            placeholder="XXXXXX"
+                            autocomplete="off"
+                            required
+                            class="captcha-input"
+                            maxlength="6"
+                        /><button type="submit" class="action-btn">Verify</button>
+                    </div>
+                </form>
+                {{end}}{{if .ShowRetryButton}}<button
+                    id="retryBtn"
+                    class="action-btn secondary"
+                    onclick="window.location.reload()"
+                >
+                    Try Again</button
+                >{{end}}
+                <div class="tech-info">
+                    <div class="info-col">
+                        <span class="info-label">Ray ID</span><span class="info-value">{{.RayID}}</span>
+                    </div>
+                    <div class="info-col">
+                        <span class="info-label">Your IP</span><span class="info-value">{{.ClientIP}}</span>
+                    </div>
+                    {{if .AgentID}}
+                    <div class="info-col">
+                        <span class="info-label">Node</span><span class="info-value">{{.AgentID}}</span>
+                    </div>
+                    <div class="info-col">
+                        <span class="info-label">System</span><span class="info-value">Defenra</span>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+        <script>
+            (function(){document.addEventListener('click',function(e){const t=e.target.closest('button, input[type="submit"]');if(t&&!e.isTrusted){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();return!1}},!0);document.addEventListener('submit',function(e){if(!e.isTrusted){e.preventDefault();e.stopPropagation();return!1}},!0)})();{{.JSCode}}
+        </script>
+    </body>
+</html>

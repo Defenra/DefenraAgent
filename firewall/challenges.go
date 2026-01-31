@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/defenra/agent/assets"
 )
 
 // ChallengeResponse represents a challenge response from the firewall
@@ -71,30 +73,31 @@ func init() {
 func NewChallengeManager() *ChallengeManager {
 	var tmpl *template.Template
 
-	// Production: Always use embedded template for consistency and reliability
-	// The embedded template is compiled into the binary and cannot be accidentally modified
-	tmpl = template.Must(template.New("challenge").Parse(getEmbeddedTemplate()))
-	log.Printf("[ChallengeManager] Loaded embedded challenge template (compiled into binary)")
+	// Production: Always use embedded template from assets package
+	// The template file is embedded into the binary at build time via //go:embed
+	templateBytes, err := assets.GetChallengeTemplate()
+	if err != nil {
+		// This should never happen if the build is correct
+		panic(fmt.Sprintf("[ChallengeManager] CRITICAL: Failed to load embedded template: %v", err))
+	}
 
-	// Development mode: Allow overriding with file template via environment variable
-	// Set DEFENRA_DEV_TEMPLATE=1 to use file template for development
+	tmpl, err = template.New("challenge").Parse(string(templateBytes))
+	if err != nil {
+		// This should never happen if the template file is valid
+		panic(fmt.Sprintf("[ChallengeManager] CRITICAL: Failed to parse embedded template: %v", err))
+	}
+
+	log.Printf("[ChallengeManager] Loaded embedded challenge template from binary (%d bytes)", len(templateBytes))
+
+	// Development mode: Allow overriding with external file template
+	// Set DEFENRA_DEV_TEMPLATE=1 to use file template for development/testing
 	if os.Getenv("DEFENRA_DEV_TEMPLATE") == "1" {
-		// Try multiple paths for the template file (development only)
-		templatePaths := []string{
-			"assets/html/challenge_template.html",
-			"./assets/html/challenge_template.html",
-			"DefenraAgent/assets/html/challenge_template.html",
-			"/opt/defenra-agent/assets/html/challenge_template.html",
-			"/usr/local/bin/assets/html/challenge_template.html",
-		}
-
-		for _, path := range templatePaths {
-			devTmpl, devErr := template.ParseFiles(path)
-			if devErr == nil {
-				tmpl = devTmpl
-				log.Printf("[ChallengeManager] DEV MODE: Overriding with file template: %s", path)
-				break
-			}
+		externalTmpl, externalErr := template.ParseFiles("assets/html/challenge_template.html")
+		if externalErr == nil {
+			tmpl = externalTmpl
+			log.Printf("[ChallengeManager] DEV MODE: Overriding with external file template")
+		} else {
+			log.Printf("[ChallengeManager] DEV MODE: External template not found, using embedded")
 		}
 	}
 

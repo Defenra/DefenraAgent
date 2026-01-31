@@ -9,6 +9,9 @@ import (
 //go:embed injected/*
 var injectedFS embed.FS
 
+//go:embed html/challenge_template.html
+var challengeTemplateFS embed.FS
+
 // GetInjectedFileSystem returns an http.FileSystem for the injected assets
 func GetInjectedFileSystem() http.FileSystem {
 	// Sub returns a filesystem starting at the given subtree
@@ -18,4 +21,9 @@ func GetInjectedFileSystem() http.FileSystem {
 		panic(err)
 	}
 	return http.FS(fsys)
+}
+
+// GetChallengeTemplate returns the challenge template content
+func GetChallengeTemplate() ([]byte, error) {
+	return challengeTemplateFS.ReadFile("html/challenge_template.html")
 }
