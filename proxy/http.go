@@ -749,7 +749,7 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	if strings.Contains(strings.ToLower(contentType), "text/html") {
 		// Inject test script
 		// TODO: Make this configurable per domain/policy
-		script := GetInjectionScript("/d/_dsf/test.js")
+		script := GetInjectionScript("/d/_dsf/index.js")
 		src = NewInjectionReader(resp.Body, script)
 		
 		// Content-Length is no longer valid after injection

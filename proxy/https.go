@@ -1033,7 +1033,7 @@ func (s *HTTPSProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "text/html") {
 		// Inject test script
-		script := GetInjectionScript("/d/_dsf/test.js")
+		script := GetInjectionScript("/d/_dsf/index.js")
 		src = NewInjectionReader(resp.Body, script)
 	}
 
