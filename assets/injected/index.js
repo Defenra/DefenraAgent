@@ -1,96 +1,78 @@
 (function() {
-    // 1. Проверка нахождения на странице самой проверки (Challenge)
-    if (document.getElementById('challenge-form') || 
-        window.location.pathname.includes('/challenge') || 
-        window.location.hostname.includes('challenges.cloudflare.com')) {
-        return;
-    }
+    if (document.getElementById('challenge-form') || window.location.pathname.includes('/challenge')) return;
 
-    // Проверяем, был ли релоад вызван защитой, и выводим отчет
-    const lastIncident = localStorage.getItem('_defenra_last_incident');
-    if (lastIncident) {
-        try {
-            const data = JSON.parse(lastIncident);
-            console.log(`%c[Defenra] Previous session was challenged! Reason: ${data.status} on ${data.url}`, "color: orange; font-weight: bold;");
-            localStorage.removeItem('_defenra_last_incident');
-        } catch (e) {}
-    }
-
-    console.log("[Defenra] Protection Module Active");
+    /* Powered by Defenra Project: https://github.com/Defenra */
+    console.log("[Defenra] System Initialized");
 
     let protectionTriggered = false;
-    let reloadScheduled = false;
+    const IMAGE_CONCURRENCY = 3; 
+    const queue = [];
+    let activeRequests = 0;
 
-    const originalFetch = window.fetch;
-    const originalXHROpen = XMLHttpRequest.prototype.open;
-    const originalXHRSend = XMLHttpRequest.prototype.send;
-
-    /**
-     * Останавливает сетевую активность и инициирует перезагрузку
-     */
-    function triggerReload(status, url = 'unknown') {
-        if (reloadScheduled) return;
-        reloadScheduled = true;
+    function triggerReload(status) {
+        if (protectionTriggered) return;
         protectionTriggered = true;
-
-        // Сохраняем инцидент для отладки после релоада
-        try {
-            localStorage.setItem('_defenra_last_incident', JSON.stringify({
-                status: status,
-                url: url,
-                ts: Date.now()
-            }));
-        } catch (e) {}
-
-        console.warn(`[Defenra] Security challenge detected! Status: ${status} | Resource: ${url}`);
+        window.stop();
         
-        // Прерываем текущий поток выполнения и релоадим
-        setTimeout(() => {
-            window.location.reload();
-        }, 150);
+        const overlay = document.getElementById('defenra-status');
+        if (overlay) {
+            overlay.style.background = "#d9534f";
+            overlay.innerHTML = "⚠️ Security Challenge Required. Reloading...";
+        }
+
+        setTimeout(() => window.location.reload(), 200);
     }
 
-    // --- БЛОК 1: Мониторинг статики (Картинки, Стили, Шрифты) ---
-    // Работает для ресурсов с того же домена
-    if (window.PerformanceObserver) {
-        const observer = new PerformanceObserver((list) => {
-            list.getEntries().forEach((entry) => {
-                if (entry.entryType === 'resource') {
-                    const s = entry.responseStatus;
-                    // responseStatus доступен не во всех браузерах (требует Timing-Allow-Origin для CORS)
-                    if (s === 403 || s === 429) {
-                        triggerReload(s, entry.name);
-                    }
+    function processQueue() {
+        if (protectionTriggered || activeRequests >= IMAGE_CONCURRENCY || queue.length === 0) return;
+
+        const item = queue.shift();
+        activeRequests++;
+
+        const img = new Image();
+        img.onload = () => {
+            item.target.src = item.src;
+            item.target.style.opacity = "1";
+            activeRequests--;
+            processQueue();
+        };
+        img.onerror = () => {
+            activeRequests--;
+            fetch(item.src, { method: 'HEAD', cache: 'no-store' }).then(res => {
+                if (res.status === 403 || res.status === 429) triggerReload(res.status);
+                else processQueue();
+            }).catch(() => processQueue());
+        };
+        img.src = item.src;
+    }
+
+    const domObserver = new MutationObserver((mutations) => {
+        if (protectionTriggered) return;
+        mutations.forEach(mutation => {
+            mutation.addedNodes.forEach(node => {
+                if (node.tagName === 'IMG' && node.src && !node.dataset.controlled) {
+                    const originalSrc = node.src;
+                    node.dataset.controlled = "true";
+                    node.style.opacity = "0.3"; 
+                    node.style.transition = "opacity 0.3s";
+                    node.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+                    queue.push({ target: node, src: originalSrc });
+                    processQueue();
                 }
             });
         });
-        observer.observe({ type: 'resource', buffered: true });
-    }
+    });
 
-    // Резервный метод для старых браузеров (ловит ошибки загрузки <img>)
-    window.addEventListener('error', function(e) {
-        if (protectionTriggered) return;
-        const target = e.target;
-        if (target && (target.tagName === 'IMG' || target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
-            const resourceUrl = target.src || target.href;
-            if (!resourceUrl) return;
+    domObserver.observe(document.documentElement, { childList: true, subtree: true });
 
-            // Проверяем доступность через быстрый HEAD запрос
-            originalFetch(resourceUrl, { method: 'HEAD' }).then(res => {
-                if (res.status === 403 || res.status === 429) triggerReload(res.status, resourceUrl);
-            }).catch(() => {});
-        }
-    }, true);
-
-    // --- БЛОК 2: Перехват Fetch API ---
+    const originalFetch = window.fetch;
     window.fetch = async function(...args) {
-        if (protectionTriggered) return new Promise(() => {}); // Блокировка
-
+        if (protectionTriggered) return new Promise(() => {});
         try {
             const response = await originalFetch.apply(this, args);
             if (response.status === 403 || response.status === 429) {
-                triggerReload(response.status, args[0]);
-                return new Promise(() => {}); 
+                triggerReload(response.status);
+                return new Promise(() => {});
             }
             return response;
         } catch (e) {
@@ -99,27 +81,25 @@
         }
     };
 
-    // --- БЛОК 3: Перехват XMLHttpRequest (AJAX) ---
-    XMLHttpRequest.prototype.open = function(method, url) {
-        this._url = url;
-        return originalXHROpen.apply(this, arguments);
-    };
-
+    const originalXHROpen = XMLHttpRequest.prototype.open;
+    const originalXHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(m, url) { this._url = url; return originalXHROpen.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function() {
-        if (protectionTriggered) return; 
-
-        this.addEventListener('readystatechange', () => {
-            if (this.readyState === 4 && (this.status === 403 || this.status === 429)) {
-                triggerReload(this.status, this._url);
-            }
+        if (protectionTriggered) return;
+        this.addEventListener('load', () => {
+            if (this.status === 403 || this.status === 429) triggerReload(this.status);
         });
-
-        try {
-            return originalXHRSend.apply(this, arguments);
-        } catch (e) {
-            if (protectionTriggered) return;
-            throw e;
-        }
+        return originalXHRSend.apply(this, arguments);
     };
 
+    function injectOverlay() {
+        const div = document.createElement('div');
+        div.id = "defenra-status";
+        div.style = "position:fixed;bottom:20px;left:20px;padding:12px 20px;background:rgba(28,28,28,0.9);color:#fff;z-index:999999;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;box-shadow:0 4px 15px rgba(0,0,0,0.3);display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.1);";
+        div.innerHTML = `<span style="color:#4caf50">●</span> <b>Defenra</b> Protection Active`;
+        document.body.appendChild(div);
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectOverlay);
+    else injectOverlay();
 })();
