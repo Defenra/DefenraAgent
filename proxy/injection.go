@@ -81,19 +81,19 @@ func (r *InjectionReader) Read(p []byte) (n int, err error) {
 
 		// Construct the output: part before match + match + injection + part after match
 		// Actually, we replace "<head>" with "<head>INJECTION"
-		
+
 		// Copy up to end of match
 		endOfMatch := idx + r.matchLen
-		
+
 		// We have to be careful not to overflow p
 		// Strategy: Create a composed buffer of everything we want to send, then copy to p
 		// Since Read contract allows short reads, we can return what fits
-		
+
 		var output bytes.Buffer
 		output.Write(r.buffer[:endOfMatch])
 		output.Write(r.injection)
 		output.Write(r.buffer[endOfMatch:])
-		
+
 		// Replace internal buffer with the composed result
 		r.buffer = output.Bytes()
 	}
@@ -106,7 +106,7 @@ func (r *InjectionReader) Read(p []byte) (n int, err error) {
 		r.buffer = r.buffer[n:]
 		return n, nil
 	}
-	
+
 	// If we successfully injected (or just flushing buffer), copy to p
 	if len(r.buffer) > 0 {
 		n = copy(p, r.buffer)
@@ -126,7 +126,7 @@ func GetInjectionScript(path string) []byte {
 	if val, ok := scriptInjectionCache.Load(path); ok {
 		return val.([]byte)
 	}
-	
+
 	// Default script tag
 	script := []byte(`<script src="` + path + `" async></script>`)
 	scriptInjectionCache.Store(path, script)

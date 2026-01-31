@@ -285,13 +285,13 @@ func (s *HTTPSProxyServer) handleRequest(w http.ResponseWriter, r *http.Request)
 	// Serve injected scripts from /d/_dsf/ path
 	if strings.HasPrefix(r.URL.Path, "/d/_dsf/") {
 		filename := strings.TrimPrefix(r.URL.Path, "/d/_dsf/")
-		
+
 		// Use embedded filesystem
 		fileServer := http.FileServer(assets.GetInjectedFileSystem())
-		
+
 		// Strip the prefix so the file server sees just "index.js"
 		http.StripPrefix("/d/_dsf/", fileServer).ServeHTTP(w, r)
-		
+
 		logger.GetRateLimitedLogger().PrintfLimited("STATIC", "Served embedded file: %s", filename)
 		return
 	}
