@@ -528,179 +528,57 @@ func (cm *ChallengeManager) Stop() {
 }
 
 // Fallback methods for when template fails
+// generateSimplePoWScript generates a simple JavaScript PoW challenge script for fallback
+func generateSimplePoWScript(publicSalt, target string) string {
+	return fmt.Sprintf(`const publicSalt='%s';const target='%s';let nonce=0;
+async function solve(){
+    while(true){
+        const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(publicSalt+nonce))
+            .then(b=>Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join(''));
+        if(hash.startsWith(target)){
+            const f=document.createElement('form');
+            f.method='POST';
+            f.innerHTML='<input name="defenra_pow_nonce" value="'+nonce+'"><input name="defenra_pow_salt" value="'+publicSalt+'">';
+            document.body.appendChild(f);
+            f.submit();
+            return;
+        }
+        nonce++;
+        if(nonce%%1000===0)await new Promise(r=>setTimeout(r,1));
+    }
+}
+setTimeout(solve,100);`, publicSalt, target)
+}
+
 func (cm *ChallengeManager) fallbackJSChallenge(publicSalt, target, clientIP, rayID string) ChallengeResponse {
-	jsChallenge := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Проверка браузера</title>
-    <style>
-        :root {
-            --bg-color: #09090b;
-            --card-bg: #18181b;
-            --border-color: #27272a;
-            --text-main: #e4e4e7;
-            --text-muted: #a1a1aa;
-            --accent-blue: #3b82f6;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-image: 
-                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-            background-size: 30px 30px;
-        }
-        .container { width: 100%%; max-width: 480px; padding: 20px; }
-        .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 40px 32px;
-            text-align: center;
-            box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
-            opacity: 0.8;
-        }
-        .loader-container {
-            position: relative;
-            width: 64px;
-            height: 64px;
-            margin: 0 auto 24px auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .radar-spinner {
-            width: 100%%;
-            height: 100%%;
-            border-radius: 50%%;
-            border: 2px solid var(--border-color);
-            border-top-color: var(--accent-blue);
-            animation: spin 1.2s cubic-bezier(0.55, 0.055, 0.675, 0.19) infinite;
-        }
-        .radar-pulse {
-            position: absolute;
-            width: 100%%;
-            height: 100%%;
-            border-radius: 50%%;
-            background: var(--accent-blue);
-            opacity: 0.2;
-            animation: pulse 2s ease-out infinite;
-        }
-        .progress-container {
-            width: 100%%;
-            background-color: var(--border-color);
-            border-radius: 4px;
-            margin: 20px 0;
-            height: 8px;
-            overflow: hidden;
-        }
-        .progress-bar {
-            height: 100%%;
-            background: linear-gradient(90deg, var(--accent-blue), #60a5fa);
-            border-radius: 4px;
-            width: 0%%;
-            transition: width 0.3s ease;
-        }
-        .tech-info {
-            margin-top: 32px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border-color);
-            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-            font-size: 11px;
-            color: #52525b;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .info-row { display: flex; justify-content: space-between; }
-        .info-label { opacity: 0.7; }
-        .info-value { color: var(--text-muted); }
-        h1 { font-size: 20px; font-weight: 600; margin-bottom: 12px; letter-spacing: -0.02em; }
-        p { font-size: 14px; line-height: 1.6; color: var(--text-muted); margin-bottom: 24px; }
-        .status-message { font-size: 12px; color: var(--text-muted); margin: 8px 0; font-family: monospace; }
-        @keyframes spin { 0%% { transform: rotate(0deg); } 100%% { transform: rotate(360deg); } }
-        @keyframes pulse { 0%% { transform: scale(0.8); opacity: 0.5; } 100%% { transform: scale(1.5); opacity: 0; } }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <div class="loader-container">
-                <div class="radar-pulse"></div>
-                <div class="radar-spinner"></div>
-            </div>
-            <h1>Проверка браузера</h1>
-            <p>Пожалуйста, подождите. Мы проверяем безопасность вашего соединения перед доступом к сайту.</p>
-            <div class="progress-container">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
-            <div class="status-message" id="statusMessage">Вычисление доказательства работы...</div>
-            <div class="tech-info">
-                <div class="info-row">
-                    <span class="info-label">Ray ID:</span>
-                    <span class="info-value">%s</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Your IP:</span>
-                    <span class="info-value">%s</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">System:</span>
-                    <span class="info-value">Defenra Shield</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <script>
-        const publicSalt='%s';const target='%s';let nonce=0;
-        async function solve(){
-            while(true){
-                const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(publicSalt+nonce))
-                    .then(b=>Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join(''));
-                if(hash.startsWith(target)){
-                    const statusMsg=document.getElementById('statusMessage');
-                    const progressBar=document.getElementById('progressBar');
-                    if(statusMsg)statusMsg.textContent='Доказательство работы завершено! Перенаправление...';
-                    if(progressBar)progressBar.style.width='100%%';
-                    const f=document.createElement('form');
-                    f.method='POST';
-                    f.innerHTML='<input name="defenra_pow_nonce" value="'+nonce+'"><input name="defenra_pow_salt" value="'+publicSalt+'">';
-                    document.body.appendChild(f);
-                    f.submit();
-                    return;
-                }
-                nonce++;
-                if(nonce%%1000===0){
-                    const progress=Math.min((nonce/100000)*100,95);
-                    const progressBar=document.getElementById('progressBar');
-                    if(progressBar)progressBar.style.width=progress+'%%';
-                    await new Promise(r=>setTimeout(r,1));
-                }
-            }
-        }
-        setTimeout(solve,100);
-    </script>
-</body>
-</html>`, rayID, clientIP, publicSalt, target)
+	// Use cached template instead of hardcoded HTML (avoiding duplication and Sprintf overhead)
+	jsScript := generateSimplePoWScript(publicSalt, target)
+
+	data := ChallengeTemplateData{
+		Title:         "Проверка браузера",
+		Message:       "Пожалуйста, подождите. Мы проверяем безопасность вашего соединения перед доступом к сайту.",
+		ShowLoader:    true,
+		ShowProgress:  true,
+		StatusMessage: "Вычисление доказательства работы...",
+		RayID:         rayID,
+		ClientIP:      clientIP,
+		AgentID:       getShortAgentID(),
+		JSCode:        template.JS(jsScript),
+	}
+
+	var buf bytes.Buffer
+	if err := cm.template.Execute(&buf, data); err != nil {
+		// Ultimate fallback: return simple error if even template fails
+		log.Printf("[Challenge] CRITICAL: Even fallback template failed: %v", err)
+		return ChallengeResponse{
+			Blocked:    true,
+			StatusCode: http.StatusServiceUnavailable,
+			Headers: map[string]string{
+				"Content-Type": "text/plain; charset=utf-8",
+			},
+			Body: "Service temporarily unavailable. Please try again.",
+		}
+	}
 
 	return ChallengeResponse{
 		Blocked:    true,
@@ -709,179 +587,39 @@ func (cm *ChallengeManager) fallbackJSChallenge(publicSalt, target, clientIP, ra
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
 		},
-		Body: jsChallenge,
+		Body: buf.String(),
 	}
 }
 
 func (cm *ChallengeManager) fallbackCaptchaChallenge(captchaData *CaptchaData, actionURL, clientIP, rayID string) ChallengeResponse {
-	captchaHTML := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Проверка безопасности</title>
-    <style>
-        :root {
-            --bg-color: #09090b;
-            --card-bg: #18181b;
-            --border-color: #27272a;
-            --text-main: #e4e4e7;
-            --text-muted: #a1a1aa;
-            --accent-blue: #3b82f6;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-image: 
-                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-            background-size: 30px 30px;
-        }
-        .container { width: 100%%; max-width: 480px; padding: 20px; }
-        .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 40px 32px;
-            text-align: center;
-            box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
-            opacity: 0.8;
-        }
-        .captcha-container {
-            position: relative;
-            display: inline-block;
-            margin: 20px 0;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .captcha-image { display: block; max-width: 100%%; }
-        .captcha-input {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-            padding: 12px 16px;
-            border-radius: 6px;
-            font-size: 14px;
-            margin: 16px 0;
-            width: 200px;
-            text-align: center;
-            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-            letter-spacing: 2px;
-        }
-        .captcha-input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
-        }
-        .action-btn {
-            background: var(--accent-blue);
-            border: 1px solid var(--accent-blue);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin: 8px;
-        }
-        .action-btn:hover {
-            background: #2563eb;
-            border-color: #2563eb;
-        }
-        .tech-info {
-            margin-top: 32px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border-color);
-            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-            font-size: 11px;
-            color: #52525b;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .info-row { display: flex; justify-content: space-between; }
-        .info-label { opacity: 0.7; }
-        .info-value { color: var(--text-muted); }
-        h1 { font-size: 20px; font-weight: 600; margin-bottom: 12px; letter-spacing: -0.02em; }
-        p { font-size: 14px; line-height: 1.6; color: var(--text-muted); margin-bottom: 24px; }
-        form { margin: 0; }
-        @media (max-width: 480px) {
-            .container { padding: 16px; }
-            .card { padding: 24px 20px; }
-            .captcha-input { width: 100%%; max-width: 200px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <h1>Проверка безопасности</h1>
-            <p>Пожалуйста, введите текст с изображения для подтверждения, что вы человек.</p>
-            <div class="captcha-container">
-                <img src="data:image/png;base64,%s" alt="CAPTCHA" class="captcha-image">
-            </div>
-            <form method="POST" action="%s">
-                <input type="hidden" name="captcha_id" value="%s">
-                <input type="text" name="captcha_answer" placeholder="Введите текст с картинки" 
-                       autocomplete="off" required class="captcha-input" maxlength="6">
-                <br>
-                <button type="submit" class="action-btn">Проверить</button>
-            </form>
-            <p style="font-size: 12px; margin-top: 16px;">
-                <a href="javascript:location.reload()" style="color: var(--text-muted); text-decoration: none;">
-                    Не видите изображение? Обновить страницу
-                </a>
-            </p>
-            <div class="tech-info">
-                <div class="info-row">
-                    <span class="info-label">Ray ID:</span>
-                    <span class="info-value">%s</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Your IP:</span>
-                    <span class="info-value">%s</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">System:</span>
-                    <span class="info-value">Defenra Shield</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <script>
-        var captchaInput=document.querySelector('input[name="captcha_answer"]');
-        if(captchaInput){
-            captchaInput.addEventListener('input',function(){
-                this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
-            });
-            captchaInput.addEventListener('keypress',function(e){
-                if(e.keyCode===13){
-                    var form=this.closest('form');
-                    if(form)form.submit();
-                }
-            });
-        }
-    </script>
-</body>
-</html>`, captchaData.ImageData, actionURL, captchaData.ID, rayID, clientIP)
+	// Use cached template instead of hardcoded HTML (avoiding duplication and Sprintf overhead)
+	obfuscator := NewSimpleJSObfuscator()
+	captchaScript := obfuscator.ObfuscateCaptchaScript()
+
+	data := ChallengeTemplateData{
+		Title:       "Проверка безопасности",
+		Message:     "Пожалуйста, введите текст с изображения для подтверждения, что вы человек.",
+		CaptchaData: captchaData,
+		RayID:       rayID,
+		ClientIP:    clientIP,
+		AgentID:     getShortAgentID(),
+		ActionURL:   actionURL,
+		JSCode:      template.JS(captchaScript),
+	}
+
+	var buf bytes.Buffer
+	if err := cm.template.Execute(&buf, data); err != nil {
+		// Ultimate fallback: return simple error if even template fails
+		log.Printf("[Challenge] CRITICAL: Even fallback template failed: %v", err)
+		return ChallengeResponse{
+			Blocked:    true,
+			StatusCode: http.StatusServiceUnavailable,
+			Headers: map[string]string{
+				"Content-Type": "text/plain; charset=utf-8",
+			},
+			Body: "Service temporarily unavailable. Please try again.",
+		}
+	}
 
 	return ChallengeResponse{
 		Blocked:    true,
@@ -890,7 +628,7 @@ func (cm *ChallengeManager) fallbackCaptchaChallenge(captchaData *CaptchaData, a
 			"Content-Type":  "text/html; charset=utf-8",
 			"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
 		},
-		Body: captchaHTML,
+		Body: buf.String(),
 	}
 }
 
