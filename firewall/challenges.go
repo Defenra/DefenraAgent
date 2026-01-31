@@ -38,6 +38,7 @@ type ChallengeManager struct {
 	captchaCache map[string]*CaptchaData
 	stopChan     chan struct{}
 	template     *template.Template
+	agentID      string // Real agent ID from config (first 8 chars used for display)
 }
 
 type CaptchaData struct {
@@ -165,7 +166,7 @@ func (cm *ChallengeManager) IssueCookieChallenge(w http.ResponseWriter, r *http.
 		ShowLoader: true,
 		RayID:      rayID,
 		ClientIP:   clientIP,
-		AgentID:    getShortAgentID(),
+		AgentID:    cm.GetAgentID(),
 		JSCode:     template.JS(redirectScript),
 	}
 
@@ -1519,4 +1520,33 @@ func (cm *ChallengeManager) CreateSessionCookie(sessionID string, secure bool) *
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400, // 24 hours
 	}
+}
+
+// SetAgentID sets the real agent ID for display in challenge pages
+// This should be called once during initialization with the actual agent ID from config
+func (cm *ChallengeManager) SetAgentID(agentID string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Store only first 8 characters for security (matches D-Agent-ID format: GEO+ID)
+	if len(agentID) > 8 {
+		cm.agentID = agentID[:8]
+	} else {
+		cm.agentID = agentID
+	}
+
+	log.Printf("[ChallengeManager] Agent ID set for challenge pages: %s", cm.agentID)
+}
+
+// GetAgentID returns the stored agent ID (first 8 chars) for challenge pages
+func (cm *ChallengeManager) GetAgentID() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	if cm.agentID != "" {
+		return cm.agentID
+	}
+
+	// Fallback to old behavior if not set
+	return getShortAgentID()
 }
