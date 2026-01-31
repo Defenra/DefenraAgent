@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/defenra/agent/assets"
 	"github.com/defenra/agent/config"
 	"github.com/defenra/agent/firewall"
 	"github.com/defenra/agent/logger"
@@ -97,19 +98,14 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	// Serve injected scripts from /d/_dsf/ path
 	if strings.HasPrefix(r.URL.Path, "/d/_dsf/") {
 		filename := strings.TrimPrefix(r.URL.Path, "/d/_dsf/")
-		// Basic directory traversal protection
-		if strings.Contains(filename, "..") || strings.Contains(filename, "\\") {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
-			return
-		}
 		
-		// Map to local assets directory
-		// We assume the binary is running from root or assets is in working dir
-		// Adjust path as needed based on deployment
-		localPath := "assets/injected/" + filename
+		// Use embedded filesystem
+		fileServer := http.FileServer(assets.GetInjectedFileSystem())
 		
-		logger.GetRateLimitedLogger().PrintfLimited("STATIC", "Serving static file: %s", localPath)
-		http.ServeFile(w, r, localPath)
+		// Strip the prefix so the file server sees just "index.js", not "/d/_dsf/index.js"
+		http.StripPrefix("/d/_dsf/", fileServer).ServeHTTP(w, r)
+		
+		logger.GetRateLimitedLogger().PrintfLimited("STATIC", "Served embedded file: %s", filename)
 		return
 	}
 
