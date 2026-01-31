@@ -53,6 +53,10 @@ func main() {
 
 	configMgr := config.NewConfigManager(coreURL, agentID, agentKey)
 
+	// Set agent ID for challenge pages (used in D-Agent-ID header format: GEO+ID[:8])
+	challengeMgr := firewall.GetChallengeManager()
+	challengeMgr.SetAgentID(agentID)
+
 	// Set up connection limit updater callback
 	configMgr.SetConnectionLimitUpdater(func(maxConnPerIP int) {
 		connLimiter := firewall.GetConnectionLimiter()
