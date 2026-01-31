@@ -81,9 +81,11 @@ func NewChallengeManager() *ChallengeManager {
 	var err error
 
 	// Try to load template from file
+	loadedFrom := ""
 	for _, path := range templatePaths {
 		tmpl, err = template.ParseFiles(path)
 		if err == nil {
+			loadedFrom = path
 			break
 		}
 	}
@@ -91,6 +93,9 @@ func NewChallengeManager() *ChallengeManager {
 	// If all file paths fail, use embedded template
 	if err != nil {
 		tmpl = template.Must(template.New("challenge").Parse(getEmbeddedTemplate()))
+		log.Printf("[ChallengeManager] Loaded embedded template (file not found in any path)")
+	} else {
+		log.Printf("[ChallengeManager] Loaded template from file: %s", loadedFrom)
 	}
 
 	cm := &ChallengeManager{
