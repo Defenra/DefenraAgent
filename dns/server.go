@@ -612,70 +612,16 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		}
 	}
 
-	// Try hardcoded fallback locations (legacy)
-	// Note: Political restrictions applied (UA clients won't route to RU)
-	fallbackLocations := map[string][]string{
-		"us": {"ca", "mx", "gb", "de"},
-		"ca": {"us", "mx", "gb", "de"},
-		"mx": {"us", "ca", "br", "cl"},
-		"br": {"ar", "cl", "us", "mx"},
-		"ar": {"br", "cl", "mx", "us"},
-		"cl": {"ar", "br", "mx", "us"},
-		"co": {"br", "ar", "mx", "cl"},
-		"gb": {"de", "fr", "nl", "us"},
-		"de": {"nl", "fr", "gb", "pl"},
-		"fr": {"de", "gb", "es", "it"},
-		"it": {"fr", "de", "es", "tr"},
-		"es": {"fr", "it", "br", "mx"},
-		"nl": {"de", "gb", "fr", "pl"},
-		"pl": {"de", "ua", "cz", "nl"}, // Poland: avoid RU
-		"ua": {"pl", "de", "tr", "ro"}, // Ukraine: NEVER route to RU
-		"ru": {"kz", "by", "fi", "tr"}, // Russia: prefer nearby (KZ, BY), avoid UA
-		"by": {"ru", "pl", "ua", "lt"}, // Belarus
-		"kz": {"ru", "uz", "cn", "tr"}, // Kazakhstan
-		"cn": {"jp", "kr", "sg", "in"},
-		"jp": {"kr", "cn", "sg", "au"},
-		"kr": {"jp", "cn", "sg", "au"},
-		"in": {"sg", "th", "id", "ae"},
-		"id": {"sg", "th", "au", "in"},
-		"th": {"sg", "id", "in", "cn"},
-		"sg": {"id", "th", "in", "au"},
-		"au": {"nz", "sg", "id", "jp"},
-		"nz": {"au", "sg", "id", "jp"},
-		"za": {"eg", "ng", "ae", "gb"},
-		"eg": {"ae", "tr", "za", "ng"},
-		"ng": {"za", "eg", "br", "fr"},
-		"ae": {"ir", "tr", "in", "eg"},
-		"tr": {"ae", "ir", "eg", "it"},
-		"ir": {"ae", "tr", "kz", "in"},
-		"cz": {"de", "pl", "at", "sk"}, // Czech Republic -> Germany, Poland, Austria, Slovakia
-		"at": {"de", "cz", "it", "ch"}, // Austria -> Germany, Czech, Italy, Switzerland
-		"sk": {"cz", "pl", "hu", "at"}, // Slovakia -> Czech, Poland, Hungary, Austria
-	}
+	// NOTE: Hardcoded fallback locations have been removed.
+	// Users must be routed to agents in their exact location only.
+	// Core-provided fallback map can be used for controlled routing decisions.
+	// If no agent exists for the location, return empty (NXDOMAIN) to prevent
+	// routing users to wrong countries (e.g., RU users being routed to KZ).
 
-	if fallbacks, ok := fallbackLocations[clientLocation]; ok {
-		for _, fallback := range fallbacks {
-			if ip, ok := geoDNSMap[fallback]; ok {
-				log.Printf("[GeoDNS] No exact match for '%s', using hardcoded fallback '%s' -> %s", clientLocation, fallback, ip)
-				return ip
-			}
-		}
-	}
-
-	// CRITICAL: When HTTP proxy is enabled, NEVER return origin IP
-	// Skip "default" key which contains origin IP
+	// When HTTP proxy is enabled and no exact match found, do NOT fall back to random agents
+	// This ensures strict geo-routing and prevents routing users to wrong countries
 	if httpProxyEnabled {
-		// Return any available agent IP as last resort
-		for location, ip := range geoDNSMap {
-			// Skip "default" key - it contains origin IP
-			if location == "default" {
-				continue
-			}
-			log.Printf("[GeoDNS] HTTP Proxy enabled, using any available agent '%s' -> %s (skipping default/origin)", location, ip)
-			return ip
-		}
-
-		log.Printf("[GeoDNS] HTTP Proxy enabled but no agent IPs available for location '%s'", clientLocation)
+		log.Printf("[GeoDNS] No agent available for location '%s' - returning NXDOMAIN to enforce strict geo-routing", clientLocation)
 		return ""
 	}
 
