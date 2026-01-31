@@ -180,8 +180,11 @@ var suspiciousUserAgents = []string{
 
 // Search engine bots (allowed)
 var allowedBots = []string{
-	"googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandexbot", "facebookexternalhit",
-	"twitterbot", "linkedinbot", "whatsapp", "telegram", "discord", "slack", "applebot",
+	"googlebot", "google-site-verification", "google-inspectiontool", "mediapartners-google", "adsbot-google",
+	"bingbot", "bingpreview", "msnbot", "yandex", "mail.ru", "sogou", "baiduspider", "baidugame",
+	"duckduckbot", "slurp", "ia_archiver", "petalbot", "applebot", "pinterestbot", "mojeekbot",
+	"facebookexternalhit", "twitterbot", "linkedinbot", "whatsapp", "telegram", "discord",
+	"slack", "vkshare", "redditbot",
 }
 
 // AnalyzeUserAgent analyzes User-Agent header for suspicious patterns
@@ -320,8 +323,11 @@ func (l7 *L7Protection) AnalyzeRequest(r *http.Request, clientIP string, tlsFing
 	connInfo.RequestCount++
 	connInfo.LastAccess = now
 
-	// Check IP rate limit
-	if int(connInfo.RequestCount) > l7.config.IPRateLimit {
+	isAllowedBot := strings.Contains(uaReason, "Allowed bot")
+
+	// Check IP rate limit (skip for allowed bots to prevent blocking search engines)
+	// TODO: Add Reverse DNS verification to prevent UA spoofing
+	if !isAllowedBot && int(connInfo.RequestCount) > l7.config.IPRateLimit {
 		IncRateLimitBlocks()
 		return -1, fmt.Sprintf("IP rate limit exceeded (%d/%v)", l7.config.IPRateLimit, l7.config.RateWindow), nil
 	}
