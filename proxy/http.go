@@ -740,9 +740,10 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 
 	var src io.Reader = resp.Body
 
-	// Check if we need to inject content (HTML only)
+	// Check if we need to inject content (HTML only, and only on 200 OK)
+	// We avoid injecting on error pages (403/429/500) to prevent infinite reload loops
 	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(strings.ToLower(contentType), "text/html") {
+	if resp.StatusCode == http.StatusOK && strings.Contains(strings.ToLower(contentType), "text/html") {
 		// Inject test script
 		// TODO: Make this configurable per domain/policy
 		script := GetInjectionScript("/d/_dsf/index.js")
