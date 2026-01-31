@@ -93,6 +93,26 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 
 	logger.GetRateLimitedLogger().PrintfLimited("HTTP_REQ", "Request: %s %s from %s", r.Method, r.Host+r.RequestURI, clientIP)
 
+	// === STATIC FILE SERVING ===
+	// Serve injected scripts from /d/_dsf/ path
+	if strings.HasPrefix(r.URL.Path, "/d/_dsf/") {
+		filename := strings.TrimPrefix(r.URL.Path, "/d/_dsf/")
+		// Basic directory traversal protection
+		if strings.Contains(filename, "..") || strings.Contains(filename, "\\") {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		
+		// Map to local assets directory
+		// We assume the binary is running from root or assets is in working dir
+		// Adjust path as needed based on deployment
+		localPath := "assets/injected/" + filename
+		
+		logger.GetRateLimitedLogger().PrintfLimited("STATIC", "Serving static file: %s", localPath)
+		http.ServeFile(w, r, localPath)
+		return
+	}
+
 	// Проверка банов (только для систем без ipset)
 	// Если ipset+iptables работают, забаненные IP не дойдут до этой точки
 	if s.firewallMgr != nil && !s.firewallMgr.IsUsingIPSet() && s.firewallMgr.IsBanned(clientIP) {
@@ -613,6 +633,11 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 
 	// Copy all headers from client request
 	for key, values := range r.Header {
+		// Skip Accept-Encoding to prevent upstream compression
+		// This ensures we can inspect and modify HTML content
+		if strings.EqualFold(key, "Accept-Encoding") {
+			continue
+		}
 		for _, value := range values {
 			proxyReq.Header.Add(key, value)
 		}
@@ -717,7 +742,22 @@ func (s *HTTPProxyServer) proxyRequest(w http.ResponseWriter, r *http.Request, t
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 
-	if _, err := io.CopyBuffer(cw, resp.Body, *buf); err != nil {
+	var src io.Reader = resp.Body
+
+	// Check if we need to inject content (HTML only)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(strings.ToLower(contentType), "text/html") {
+		// Inject test script
+		// TODO: Make this configurable per domain/policy
+		script := GetInjectionScript("/d/_dsf/test.js")
+		src = NewInjectionReader(resp.Body, script)
+		
+		// Content-Length is no longer valid after injection
+		// We already wrote headers, but for the writer stats/future logic:
+		// Go's CopyBuffer will handle the transfer
+	}
+
+	if _, err := io.CopyBuffer(cw, src, *buf); err != nil {
 		log.Printf("[HTTP] Error proxying response body: %v", err)
 		// Connection likely broken
 	}
