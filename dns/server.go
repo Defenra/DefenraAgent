@@ -631,12 +631,7 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		return ip
 	}
 
-	// Return any available IP as last resort
-	for location, ip := range geoDNSMap {
-		log.Printf("[GeoDNS] No default available, using any available location '%s' -> %s", location, ip)
-		return ip
-	}
-
+	// DO NOT fall back to random agents. Strict routing required.
 	log.Printf("[GeoDNS] No IPs available in GeoDNS map for location '%s'", clientLocation)
 	return ""
 }
