@@ -5,9 +5,20 @@ import (
 )
 
 type Config struct {
-	Domains    []Domain `json:"domains"`
-	Proxies    []Proxy  `json:"proxies"`
+	Domains    []Domain            `json:"domains"`
+	Agents     []FallbackAgentInfo `json:"agents"` // All agents for coordinate-based fallback
+	Proxies    []Proxy             `json:"proxies"`
 	LastUpdate time.Time
+}
+
+// FallbackAgentInfo represents agent information for coordinate-based fallback
+type FallbackAgentInfo struct {
+	AgentId     string  `json:"agentId"`
+	AgentName   string  `json:"agentName"`
+	AgentIp     string  `json:"agentIp"`
+	LoadScore   float64 `json:"loadScore"`
+	CountryCode string  `json:"countryCode"`
+	City        string  `json:"city"`
 }
 
 type Domain struct {

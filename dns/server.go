@@ -21,6 +21,7 @@ type DNSServer struct {
 type ConfigManagerInterface interface {
 	GetDomain(domain string) *config.Domain
 	GetAgentIP() string
+	GetAgents() []config.FallbackAgentInfo
 }
 
 type DNSStats struct {
@@ -178,7 +179,9 @@ func (s *DNSServer) handleGeoDNSQuery(w dns.ResponseWriter, r *dns.Msg, domainCo
 		log.Printf("[DNS] GeoDNS Fallback Map: %+v", domainConfig.GeoDnsFallbackMap)
 	}
 
-	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, domainConfig.HTTPProxy.Enabled)
+	// Get agents list for coordinate-based fallback
+	allAgents := s.configMgr.GetAgents()
+	agentIP := findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, domainConfig.HTTPProxy.Enabled, allAgents)
 	if agentIP == "" {
 		log.Printf("[DNS] No agent IP found for location: %s (HTTP Proxy: %v)", clientLocation, domainConfig.HTTPProxy.Enabled)
 		s.sendNXDOMAIN(w, r)
@@ -280,7 +283,9 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 						clientLocation = detectedLocation
 					}
 				}
-				agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, cnameRecord.HTTPProxyEnabled)
+				// Get agents list for coordinate-based fallback
+				allAgents := s.configMgr.GetAgents()
+				agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, cnameRecord.HTTPProxyEnabled, allAgents)
 				log.Printf("[DNS] CNAME Flattening: Using GeoDNS agent selection: %s (location: %s) → %s", queryName, clientLocation, agentIP)
 			}
 
@@ -444,7 +449,9 @@ func (s *DNSServer) handleRegularDNSQuery(w dns.ResponseWriter, r *dns.Msg, doma
 								clientLocation = detectedLocation
 							}
 						}
-						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, record.HTTPProxyEnabled)
+						// Get agents list for coordinate-based fallback
+						allAgents := s.configMgr.GetAgents()
+						agentIP = findBestAgentIP(domainConfig.GeoDNSMap, domainConfig.GeoDnsFallbackMap, clientLocation, record.HTTPProxyEnabled, allAgents)
 						log.Printf("[DNS] Using GeoDNS agent selection for proxied record: %s (location: %s) → %s", queryName, clientLocation, agentIP)
 					}
 
@@ -598,7 +605,7 @@ func extractClientIP(addr net.Addr) string {
 	}
 }
 
-func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string, clientLocation string, httpProxyEnabled bool) string {
+func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string, clientLocation string, httpProxyEnabled bool, allAgents []config.FallbackAgentInfo) string {
 	// Try exact match first
 	if ip, ok := geoDNSMap[clientLocation]; ok {
 		return ip
@@ -612,44 +619,45 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		}
 	}
 
-	// If no exact match and no Core fallback, use coordinate-based fallback
-	// Find nearest agent by geographic distance (with political restrictions)
-	clientCoords, ok := LOCATION_COORDINATES[clientLocation]
-	if ok && len(geoDNSMap) > 0 {
-		var nearestAgent string
-		var minDistance float64 = -1
+	// If no exact match and no Core fallback, use coordinate-based fallback with all agents
+	if len(allAgents) > 0 {
+		clientCoords, ok := LOCATION_COORDINATES[clientLocation]
+		if ok {
+			var nearestAgent string
+			var minDistance float64 = -1
 
-		for locationCode, agentIP := range geoDNSMap {
-			// Skip non-location entries like "default"
-			if locationCode == "default" {
-				continue
+			for _, agent := range allAgents {
+				agentCountryCode := strings.ToLower(agent.CountryCode)
+				if agentCountryCode == "" {
+					continue
+				}
+
+				// Check political restrictions
+				if isRoutingRestricted(clientLocation, agentCountryCode) {
+					continue
+				}
+
+				agentCoords, ok := LOCATION_COORDINATES[agentCountryCode]
+				if !ok {
+					continue
+				}
+
+				dist := calculateHaversineDistance(
+					clientCoords.Lat, clientCoords.Lon,
+					agentCoords.Lat, agentCoords.Lon,
+				)
+
+				if minDistance == -1 || dist < minDistance {
+					minDistance = dist
+					nearestAgent = agent.AgentIp
+				}
 			}
 
-			agentCoords, ok := LOCATION_COORDINATES[locationCode]
-			if !ok {
-				continue
+			if nearestAgent != "" {
+				log.Printf("[GeoDNS] No exact match for '%s', using nearest agent: %s (distance: %.0f km)",
+					clientLocation, nearestAgent, minDistance)
+				return nearestAgent
 			}
-
-			// Check political restrictions
-			if isRoutingRestricted(clientLocation, locationCode) {
-				continue
-			}
-
-			dist := calculateHaversineDistance(
-				clientCoords.Lat, clientCoords.Lon,
-				agentCoords.Lat, agentCoords.Lon,
-			)
-
-			if minDistance == -1 || dist < minDistance {
-				minDistance = dist
-				nearestAgent = agentIP
-			}
-		}
-
-		if nearestAgent != "" {
-			log.Printf("[GeoDNS] No exact match for '%s', using nearest agent: %s (distance: %.0f km)",
-				clientLocation, nearestAgent, minDistance)
-			return nearestAgent
 		}
 	}
 
