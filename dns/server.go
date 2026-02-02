@@ -612,16 +612,50 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 		}
 	}
 
-	// NOTE: Hardcoded fallback locations have been removed.
-	// Users must be routed to agents in their exact location only.
-	// Core-provided fallback map can be used for controlled routing decisions.
-	// If no agent exists for the location, return empty (NXDOMAIN) to prevent
-	// routing users to wrong countries (e.g., RU users being routed to KZ).
+	// If no exact match and no Core fallback, use coordinate-based fallback
+	// Find nearest agent by geographic distance (with political restrictions)
+	clientCoords, ok := LOCATION_COORDINATES[clientLocation]
+	if ok && len(geoDNSMap) > 0 {
+		var nearestAgent string
+		var minDistance float64 = -1
 
-	// When HTTP proxy is enabled and no exact match found, do NOT fall back to random agents
-	// This ensures strict geo-routing and prevents routing users to wrong countries
+		for locationCode, agentIP := range geoDNSMap {
+			// Skip non-location entries like "default"
+			if locationCode == "default" {
+				continue
+			}
+
+			agentCoords, ok := LOCATION_COORDINATES[locationCode]
+			if !ok {
+				continue
+			}
+
+			// Check political restrictions
+			if isRoutingRestricted(clientLocation, locationCode) {
+				continue
+			}
+
+			dist := calculateHaversineDistance(
+				clientCoords.Lat, clientCoords.Lon,
+				agentCoords.Lat, agentCoords.Lon,
+			)
+
+			if minDistance == -1 || dist < minDistance {
+				minDistance = dist
+				nearestAgent = agentIP
+			}
+		}
+
+		if nearestAgent != "" {
+			log.Printf("[GeoDNS] No exact match for '%s', using nearest agent: %s (distance: %.0f km)",
+				clientLocation, nearestAgent, minDistance)
+			return nearestAgent
+		}
+	}
+
+	// When HTTP proxy is enabled and no match found
 	if httpProxyEnabled {
-		log.Printf("[GeoDNS] No agent available for location '%s' - returning NXDOMAIN to enforce strict geo-routing", clientLocation)
+		log.Printf("[GeoDNS] No agent available for location '%s' - returning NXDOMAIN", clientLocation)
 		return ""
 	}
 
