@@ -428,6 +428,15 @@ func (cm *ConfigManager) GetProxies() []Proxy {
 	return proxies
 }
 
+func (cm *ConfigManager) GetAgents() []FallbackAgentInfo {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	agents := make([]FallbackAgentInfo, len(cm.config.Agents))
+	copy(agents, cm.config.Agents)
+	return agents
+}
+
 func (cm *ConfigManager) GetStats() Stats {
 	cm.stats.mu.RLock()
 	defer cm.stats.mu.RUnlock()

@@ -21,12 +21,13 @@ type WebSocketMessage struct {
 
 // WebSocketConfig represents the config sent via WebSocket
 type WebSocketConfig struct {
-	AgentId string    `json:"agentId"`
-	Domains []Domain  `json:"domains"`
-	Proxies []Proxy   `json:"proxies"`
-	GeoCode string    `json:"geoCode,omitempty"`
-	Bans    []BanInfo `json:"bans"`
-	Hash    int       `json:"hash,omitempty"` // Config version hash
+	AgentId string              `json:"agentId"`
+	Domains []Domain            `json:"domains"`
+	Proxies []Proxy             `json:"proxies"`
+	Agents  []FallbackAgentInfo `json:"agents"` // All agents for coordinate-based fallback
+	GeoCode string              `json:"geoCode,omitempty"`
+	Bans    []BanInfo           `json:"bans"`
+	Hash    int                 `json:"hash,omitempty"` // Config version hash
 }
 
 // BanInfo represents ban information
@@ -287,6 +288,7 @@ func (w *WebSocketClient) convertConfig(wsConfig *WebSocketConfig) *Config {
 	config := &Config{
 		Domains:    wsConfig.Domains,
 		Proxies:    wsConfig.Proxies,
+		Agents:     wsConfig.Agents, // All agents for coordinate-based fallback
 		LastUpdate: time.Now(),
 	}
 
