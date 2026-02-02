@@ -24,6 +24,8 @@ type ConfigManager struct {
 	client                 *http.Client
 	stats                  Stats
 	connectionLimitUpdater func(int) // Callback to update connection limits
+	wsClient               *WebSocketClient
+	useWS                  bool
 }
 
 type Stats struct {
@@ -51,6 +53,21 @@ func NewConfigManager(coreURL, agentID, agentKey string) *ConfigManager {
 }
 
 func (cm *ConfigManager) StartPolling(interval time.Duration) {
+	// Try WebSocket first
+	cm.initWebSocket()
+	if err := cm.wsClient.Start(); err == nil {
+		log.Println("[ConfigManager] Using WebSocket for real-time updates")
+		cm.useWS = true
+		// Keep HTTP polling as backup every 5 minutes
+		go cm.startHTTPBackup(5 * time.Minute)
+	} else {
+		log.Printf("[ConfigManager] WebSocket unavailable, using HTTP polling: %v", err)
+		cm.useWS = false
+		cm.StartPollingHTTP(interval)
+	}
+}
+
+func (cm *ConfigManager) StartPollingHTTP(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -59,6 +76,41 @@ func (cm *ConfigManager) StartPolling(interval time.Duration) {
 	for range ticker.C {
 		cm.poll()
 	}
+}
+
+func (cm *ConfigManager) startHTTPBackup(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if !cm.useWS {
+			// WebSocket is not being used, stop backup polling
+			return
+		}
+		cm.poll()
+	}
+}
+
+func (cm *ConfigManager) initWebSocket() {
+	cm.wsClient = NewWebSocketClient(
+		cm.agentID,
+		cm.agentKey,
+		cm.coreURL,
+		cm.handleWSConfig, // callback for config updates
+		cm.handleWSBan,    // callback for ban updates
+	)
+}
+
+func (cm *ConfigManager) handleWSConfig(config *Config) {
+	cm.mu.Lock()
+	cm.config = config
+	cm.mu.Unlock()
+	log.Println("[WebSocket] Configuration updated")
+}
+
+func (cm *ConfigManager) handleWSBan(ban BanInfo) {
+	// Forward to firewall manager
+	log.Printf("[WebSocket] New ban received: %s", ban.IP)
 }
 
 func (cm *ConfigManager) poll() {
