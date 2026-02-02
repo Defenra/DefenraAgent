@@ -21,9 +21,11 @@ type WebSocketMessage struct {
 
 // WebSocketConfig represents the config sent via WebSocket
 type WebSocketConfig struct {
-	AgentId string         `json:"agentId"`
-	Domains []DomainConfig `json:"domains"`
-	Bans    []BanInfo      `json:"bans"`
+	AgentId string    `json:"agentId"`
+	Domains []Domain  `json:"domains"`
+	Proxies []Proxy   `json:"proxies"`
+	GeoCode string    `json:"geoCode,omitempty"`
+	Bans    []BanInfo `json:"bans"`
 }
 
 // BanInfo represents ban information
@@ -264,19 +266,9 @@ func (w *WebSocketClient) sendMessage(data interface{}) error {
 // convertConfig converts WebSocketConfig to Config
 func (w *WebSocketClient) convertConfig(wsConfig *WebSocketConfig) *Config {
 	config := &Config{
-		AgentId: wsConfig.AgentId,
-		Domains: make(map[string]*Domain),
-	}
-
-	for _, domain := range wsConfig.Domains {
-		d := &Domain{
-			Domain:           domain.Domain,
-			OriginIP:         domain.OriginIP,
-			HTTPProxyEnabled: domain.HTTPProxyEnabled,
-			SSL:              domain.SSL,
-			AntiDDoS:         domain.AntiDDoS,
-		}
-		config.Domains[domain.Domain] = d
+		Domains:    wsConfig.Domains,
+		Proxies:    wsConfig.Proxies,
+		LastUpdate: time.Now(),
 	}
 
 	return config
