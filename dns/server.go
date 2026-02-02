@@ -86,7 +86,12 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	log.Printf("[DNS] Query: %s %s from %s", domain, dns.TypeToString[qtype], w.RemoteAddr())
 
-	clientIP := extractClientIP(w.RemoteAddr())
+	// Get client IP, prefer ECS if available
+	clientIP := getClientIPFromECS(r)
+	if clientIP == "" {
+		// Fall back to source IP
+		clientIP = extractClientIP(w.RemoteAddr())
+	}
 
 	// Try to find exact domain match first
 	domainConfig := s.configMgr.GetDomain(domain)
@@ -603,6 +608,34 @@ func extractClientIP(addr net.Addr) string {
 	default:
 		return ""
 	}
+}
+
+// getClientIPFromECS extracts the client IP from EDNS Client Subnet option
+// This allows GeoDNS to work correctly behind recursive resolvers like 1.1.1.1
+func getClientIPFromECS(r *dns.Msg) string {
+	for _, opt := range r.Extra {
+		if opt.Header().Rrtype == dns.TypeOPT {
+			// EDNS0 option
+			if edns0, ok := opt.(*dns.OPT); ok {
+				for _, option := range edns0.Option {
+					if subnet, ok := option.(*dns.EDNS0_SUBNET); ok {
+						// Found ECS option
+						if subnet.Family == 1 { // IPv4
+							// Convert subnet to IP string
+							ip := net.IP(subnet.Address).String()
+							log.Printf("[DNS] ECS detected: client subnet %s/%d", ip, subnet.SourceNetmask)
+							return ip
+						} else if subnet.Family == 2 { // IPv6
+							ip := net.IP(subnet.Address).String()
+							log.Printf("[DNS] ECS detected: client subnet %s/%d", ip, subnet.SourceNetmask)
+							return ip
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string, clientLocation string, httpProxyEnabled bool, allAgents []config.FallbackAgentInfo) string {
