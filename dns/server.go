@@ -623,22 +623,31 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 	if len(allAgents) > 0 {
 		clientCoords, ok := LOCATION_COORDINATES[clientLocation]
 		if ok {
+			log.Printf("[GeoDNS] Coordinate-based fallback for '%s': checking %d agents",
+				clientLocation, len(allAgents))
+
 			var nearestAgent string
 			var minDistance float64 = -1
+			var validAgents int
 
 			for _, agent := range allAgents {
 				agentCountryCode := strings.ToLower(agent.CountryCode)
 				if agentCountryCode == "" {
+					log.Printf("[GeoDNS]   Skipping agent %s: no countryCode", agent.AgentId)
 					continue
 				}
 
 				// Check political restrictions
 				if isRoutingRestricted(clientLocation, agentCountryCode) {
+					log.Printf("[GeoDNS]   Skipping agent %s (%s): political restriction",
+						agent.AgentId, agentCountryCode)
 					continue
 				}
 
 				agentCoords, ok := LOCATION_COORDINATES[agentCountryCode]
 				if !ok {
+					log.Printf("[GeoDNS]   Skipping agent %s (%s): no coordinates for location",
+						agent.AgentId, agentCountryCode)
 					continue
 				}
 
@@ -647,11 +656,18 @@ func findBestAgentIP(geoDNSMap map[string]string, fallbackMap map[string]string,
 					agentCoords.Lat, agentCoords.Lon,
 				)
 
+				validAgents++
+				log.Printf("[GeoDNS]   Agent %s (%s): distance %.0f km",
+					agent.AgentId, agentCountryCode, dist)
+
 				if minDistance == -1 || dist < minDistance {
 					minDistance = dist
 					nearestAgent = agent.AgentIp
 				}
 			}
+
+			log.Printf("[GeoDNS]   Valid agents: %d, selected: %s (distance: %.0f km)",
+				validAgents, nearestAgent, minDistance)
 
 			if nearestAgent != "" {
 				log.Printf("[GeoDNS] No exact match for '%s', using nearest agent: %s (distance: %.0f km)",
