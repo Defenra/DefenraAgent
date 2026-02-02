@@ -26,6 +26,7 @@ type WebSocketConfig struct {
 	Proxies []Proxy   `json:"proxies"`
 	GeoCode string    `json:"geoCode,omitempty"`
 	Bans    []BanInfo `json:"bans"`
+	Hash    int       `json:"hash,omitempty"` // Config version hash
 }
 
 // BanInfo represents ban information
@@ -205,6 +206,24 @@ func (w *WebSocketClient) processMessage(data []byte) error {
 			w.onConfig(cfg)
 		}
 
+	case "ban_sync":
+		var banSync struct {
+			Bans  []BanInfo `json:"bans"`
+			Total int       `json:"total"`
+		}
+		if err := json.Unmarshal(msg.Data, &banSync); err != nil {
+			return fmt.Errorf("unmarshal ban_sync error: %w", err)
+		}
+
+		log.Printf("[WebSocket] Received ban sync with %d bans", banSync.Total)
+
+		// Forward to ban handler if set
+		if w.onBan != nil {
+			for _, ban := range banSync.Bans {
+				w.onBan(ban)
+			}
+		}
+
 	case "ban":
 		var ban BanInfo
 		if err := json.Unmarshal(msg.Data, &ban); err != nil {
@@ -284,14 +303,15 @@ func (w *WebSocketClient) IsRunning() bool {
 	return w.isRunning
 }
 
-// ReportStats sends statistics to server (optional, via HTTP is fine too)
+// ReportStats sends statistics to server via WebSocket or falls back to HTTP
 func (w *WebSocketClient) ReportStats(stats interface{}) error {
-	if !w.IsConnected() {
-		return fmt.Errorf("not connected")
+	if w.IsConnected() {
+		// Send via WebSocket
+		return w.sendMessage(map[string]interface{}{
+			"type": "stats",
+			"data": stats,
+		})
 	}
-
-	return w.sendMessage(map[string]interface{}{
-		"type": "stats",
-		"data": stats,
-	})
+	// Fallback: stats will be sent via HTTP polling
+	return fmt.Errorf("WebSocket not connected, use HTTP fallback")
 }
