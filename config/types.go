@@ -142,11 +142,12 @@ type Slowloris struct {
 }
 
 type SSL struct {
-	Enabled        bool   `json:"enabled"`
-	EncryptionMode string `json:"encryptionMode"` // off, flexible, full, full_strict
-	Certificate    string `json:"certificate"`
-	PrivateKey     string `json:"privateKey"`
-	AutoRenew      bool   `json:"autoRenew"`
+	Enabled             bool   `json:"enabled"`
+	EncryptionMode      string `json:"encryptionMode"` // off, flexible, full, full_strict
+	Certificate         string `json:"certificate"`
+	PrivateKey          string `json:"privateKey"`
+	AutoRenew           bool   `json:"autoRenew"`
+	HTTPRedirectToHTTPS bool   `json:"httpRedirectToHttps"`
 }
 
 type Proxy struct {
