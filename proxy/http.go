@@ -463,6 +463,17 @@ func (s *HTTPProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// HTTP to HTTPS redirect (only if SSL is enabled with certificate)
+	if domainConfig.SSL.Enabled && domainConfig.SSL.HTTPRedirectToHTTPS && domainConfig.SSL.Certificate != "" {
+		httpsURL := "https://" + r.Host + r.RequestURI
+		log.Printf("[HTTP] Redirecting to HTTPS: %s", httpsURL)
+
+		w.Header().Set("Location", httpsURL)
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.WriteHeader(http.StatusMovedPermanently)
+		return
+	}
+
 	if domainConfig.HTTPProxy.Type == "https" {
 		log.Printf("[HTTP] Only HTTPS allowed for domain: %s", host)
 
