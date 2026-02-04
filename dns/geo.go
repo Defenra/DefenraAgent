@@ -29,6 +29,7 @@ var LOCATION_COORDINATES = map[string]Coordinates{
 	"br": {Lat: -14.2350, Lon: -51.9253},
 	"in": {Lat: 20.5937, Lon: 78.9629},
 	"tr": {Lat: 38.9637, Lon: 35.2433},
+	"az": {Lat: 40.1431, Lon: 47.5769}, // Azerbaijan
 }
 
 // isRoutingRestricted checks political routing restrictions
