@@ -259,6 +259,7 @@ func GetConfigForClientWrapper(
 	baseConfig *tls.Config,
 	configuredDomains []string,
 	getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error),
+	tlsFingerprintEnabled bool,
 ) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 
 	handshakeLimiter := GetHandshakeRateLimiter()
@@ -307,28 +308,30 @@ func GetConfigForClientWrapper(
 		}
 
 		// === FORTRESS LAYER 3: TLS Fingerprinting (JA3/JA4) ===
-		// Анализ TLS fingerprint для обнаружения ботов
-		tlsFingerprint := ExtractTLSFingerprint(hello)
-		if tlsFingerprint != "" {
-			// Проверяем fingerprint против базы известных ботнетов
-			if IsKnownBotFingerprint(tlsFingerprint) {
-				log.Printf("[TLS-Fortress] Blocked handshake from %s: known bot fingerprint %s",
-					ip, tlsFingerprint)
+		// Анализ TLS fingerprint для обнаружения ботов (только если включено в настройках)
+		if tlsFingerprintEnabled {
+			tlsFingerprint := ExtractTLSFingerprint(hello)
+			if tlsFingerprint != "" {
+				// Проверяем fingerprint против базы известных ботнетов
+				if IsKnownBotFingerprint(tlsFingerprint) {
+					log.Printf("[TLS-Fortress] Blocked handshake from %s: known bot fingerprint %s",
+						ip, tlsFingerprint)
 
-				if firewallMgr != nil {
-					go func() {
-						if err := firewallMgr.BanIP(ip, 24*time.Hour, "Malicious TLS fingerprint"); err != nil {
-							log.Printf("[TLS-Fortress] Failed to ban IP %s: %v", ip, err)
-						}
-					}()
+					if firewallMgr != nil {
+						go func() {
+							if err := firewallMgr.BanIP(ip, 24*time.Hour, "Malicious TLS fingerprint"); err != nil {
+								log.Printf("[TLS-Fortress] Failed to ban IP %s: %v", ip, err)
+							}
+						}()
+					}
+
+					return nil, errors.New("malicious TLS fingerprint")
 				}
 
-				return nil, errors.New("malicious TLS fingerprint")
+				// Сохраняем fingerprint для последующего анализа
+				remoteAddr := hello.Conn.RemoteAddr().String()
+				StoreTLSFingerprint(remoteAddr, tlsFingerprint)
 			}
-
-			// Сохраняем fingerprint для последующего анализа
-			remoteAddr := hello.Conn.RemoteAddr().String()
-			StoreTLSFingerprint(remoteAddr, tlsFingerprint)
 		}
 
 		// Все проверки пройдены - возвращаем базовую конфигурацию

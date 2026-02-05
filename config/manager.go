@@ -456,6 +456,22 @@ func (cm *ConfigManager) GetConfig() *Config {
 	return cm.config
 }
 
+// IsTLSFingerprintEnabled checks if TLS fingerprinting is enabled for any domain
+// This is used to determine if fingerprint-based blocking should be active at TLS handshake level
+func (cm *ConfigManager) IsTLSFingerprintEnabled() bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	for _, domain := range cm.config.Domains {
+		if domain.HTTPProxy.AntiDDoS != nil && domain.HTTPProxy.AntiDDoS.L7Protection != nil {
+			if domain.HTTPProxy.AntiDDoS.L7Protection.TLSFingerprintEnabled {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (cm *ConfigManager) GetAgentID() string {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
