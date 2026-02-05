@@ -82,6 +82,7 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 			nil, // baseConfig (nil = use default)
 			configuredDomains,
 			server.getCertificate,
+			server.configMgr.IsTLSFingerprintEnabled(),
 		),
 	}
 
