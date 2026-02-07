@@ -30,6 +30,7 @@ var LOCATION_COORDINATES = map[string]Coordinates{
 	"in": {Lat: 20.5937, Lon: 78.9629},
 	"tr": {Lat: 38.9637, Lon: 35.2433},
 	"az": {Lat: 40.1431, Lon: 47.5769}, // Azerbaijan
+	"be": {Lat: 50.8503, Lon: 4.3517},  // Belgium
 }
 
 // isRoutingRestricted checks political routing restrictions
