@@ -472,6 +472,32 @@ func (cm *ConfigManager) IsTLSFingerprintEnabled() bool {
 	return false
 }
 
+// IsTLSFingerprintEnabledForDomain checks if TLS fingerprinting is enabled for a specific domain
+// This allows per-domain TLS fingerprinting configuration at the TLS handshake level
+func (cm *ConfigManager) IsTLSFingerprintEnabledForDomain(domain string) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	if domain == "" {
+		return false
+	}
+
+	// Normalize domain to lowercase for comparison
+	domainLower := strings.ToLower(domain)
+
+	for _, d := range cm.config.Domains {
+		// Check exact match or subdomain match
+		domainConfigLower := strings.ToLower(d.Domain)
+		if domainConfigLower == domainLower || strings.HasSuffix(domainLower, "."+domainConfigLower) {
+			if d.HTTPProxy.AntiDDoS != nil && d.HTTPProxy.AntiDDoS.L7Protection != nil {
+				return d.HTTPProxy.AntiDDoS.L7Protection.TLSFingerprintEnabled
+			}
+			return false
+		}
+	}
+	return false
+}
+
 func (cm *ConfigManager) GetAgentID() string {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()

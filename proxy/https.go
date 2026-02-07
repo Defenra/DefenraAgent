@@ -77,12 +77,14 @@ func StartHTTPSProxy(configMgr *config.ConfigManager) {
 		// === FORTRESS EDITION: GetConfigForClient - главная точка защиты ===
 		// Layer 1: SNI Validation (отсекает сканеры)
 		// Layer 2: Handshake Rate Limiting (защита от velocity attacks)
-		// Layer 3: TLS Fingerprinting (обнаружение ботнетов)
+		// Layer 3: TLS Fingerprinting (обнаружение ботнетов) - домен-специфичная проверка
 		GetConfigForClient: firewall.GetConfigForClientWrapper(
 			nil, // baseConfig (nil = use default)
 			configuredDomains,
 			server.getCertificate,
-			server.configMgr.IsTLSFingerprintEnabled(),
+			func(domain string) bool {
+				return server.configMgr.IsTLSFingerprintEnabledForDomain(domain)
+			},
 		),
 	}
 
