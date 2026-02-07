@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/defenra/agent/firewall"
 )
 
 type ConfigManager struct {
@@ -96,8 +98,9 @@ func (cm *ConfigManager) initWebSocket() {
 		cm.agentID,
 		cm.agentKey,
 		cm.coreURL,
-		cm.handleWSConfig, // callback for config updates
-		cm.handleWSBan,    // callback for ban updates
+		cm.handleWSConfig,  // callback for config updates
+		cm.handleWSBan,     // callback for individual ban
+		cm.handleWSBanSync, // callback for ban sync (with unban support)
 	)
 }
 
@@ -109,8 +112,104 @@ func (cm *ConfigManager) handleWSConfig(config *Config) {
 }
 
 func (cm *ConfigManager) handleWSBan(ban BanInfo) {
-	// Forward to firewall manager
-	log.Printf("[WebSocket] New ban received: %s", ban.IP)
+	// Apply ban via firewall manager
+	firewallMgr := firewall.GetIPTablesManager()
+	if firewallMgr == nil {
+		return
+	}
+
+	// Check if already banned to avoid spam logs
+	if firewallMgr.IsBanned(ban.IP) {
+		return
+	}
+
+	// Calculate duration
+	now := time.Now()
+	if ban.ExpiresAt.Before(now) {
+		// Ban already expired, skip
+		return
+	}
+	duration := ban.ExpiresAt.Sub(now)
+
+	// Apply ban without reporting back to Core (came from Core via WebSocket)
+	var err error
+	if ban.IsCIDR {
+		err = firewallMgr.BanIPRangeWithSync(ban.IP, duration, ban.Reason+" (global)", false)
+	} else if ban.IsPermanent {
+		err = firewallMgr.AddToPermanentBlacklistWithSync(ban.IP, ban.Reason+" (global)", false)
+	} else {
+		err = firewallMgr.BanIPWithSync(ban.IP, duration, ban.Reason+" (global)", false)
+	}
+
+	if err != nil {
+		log.Printf("[WebSocket] Failed to apply ban for %s: %v", ban.IP, err)
+	} else {
+		log.Printf("[WebSocket] Applied ban: %s (%s, expires: %v)", ban.IP, ban.Reason, duration.Round(time.Minute))
+	}
+}
+
+func (cm *ConfigManager) handleWSBanSync(bans []BanInfo) {
+	// Apply all bans from sync and remove local bans that are not in the list
+	firewallMgr := firewall.GetIPTablesManager()
+	if firewallMgr == nil {
+		return
+	}
+
+	// Track which bans were applied in this sync
+	appliedBans := make(map[string]bool)
+	newBansCount := 0
+
+	for _, ban := range bans {
+		appliedBans[ban.IP] = true
+
+		// Skip if already banned
+		if firewallMgr.IsBanned(ban.IP) {
+			continue
+		}
+
+		// Check if expired
+		now := time.Now()
+		if ban.ExpiresAt.Before(now) {
+			continue
+		}
+		duration := ban.ExpiresAt.Sub(now)
+
+		// Apply ban without reporting back to Core
+		var err error
+		if ban.IsCIDR {
+			err = firewallMgr.BanIPRangeWithSync(ban.IP, duration, ban.Reason+" (global)", false)
+		} else if ban.IsPermanent {
+			err = firewallMgr.AddToPermanentBlacklistWithSync(ban.IP, ban.Reason+" (global)", false)
+		} else {
+			err = firewallMgr.BanIPWithSync(ban.IP, duration, ban.Reason+" (global)", false)
+		}
+
+		if err != nil {
+			log.Printf("[WebSocket] Failed to apply ban for %s: %v", ban.IP, err)
+		} else {
+			newBansCount++
+		}
+	}
+
+	// Remove local bans that are not in the Core list (unban)
+	// This handles case when ban was removed in UI
+	locallyBannedIPs := firewallMgr.GetAllBannedIPs()
+	removedCount := 0
+	for _, ip := range locallyBannedIPs {
+		if !appliedBans[ip] {
+			// This ban exists locally but not in Core - remove it
+			if err := firewallMgr.UnbanIP(ip); err != nil {
+				log.Printf("[WebSocket] Failed to unban %s: %v", ip, err)
+			} else {
+				removedCount++
+				log.Printf("[WebSocket] Removed ban (deleted in UI): %s", ip)
+			}
+		}
+	}
+
+	if newBansCount > 0 || removedCount > 0 {
+		log.Printf("[WebSocket] Ban sync complete: %d new bans, %d removed", newBansCount, removedCount)
+	}
 }
 
 func (cm *ConfigManager) poll() {

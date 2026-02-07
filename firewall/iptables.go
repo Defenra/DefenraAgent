@@ -242,6 +242,25 @@ func (m *IPTablesManager) IsBanned(ip string) bool {
 	return exists && time.Now().Before(expiresAt)
 }
 
+// GetAllBannedIPs returns all currently banned IPs from in-memory cache
+// Note: This only works for fallback mode (no ipset). For ipset mode,
+// this returns the in-memory cache which may not include all IPs from ipset.
+func (m *IPTablesManager) GetAllBannedIPs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	ips := make([]string, 0, len(m.bannedIPs))
+	now := time.Now()
+
+	for ip, expiresAt := range m.bannedIPs {
+		if now.Before(expiresAt) {
+			ips = append(ips, ip)
+		}
+	}
+
+	return ips
+}
+
 func (m *IPTablesManager) cleanupExpired() {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()

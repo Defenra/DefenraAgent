@@ -51,12 +51,13 @@ type WebSocketClient struct {
 	cancel            context.CancelFunc
 	onConfig          func(*Config)
 	onBan             func(BanInfo)
+	onBanSync         func([]BanInfo)
 	isRunning         bool
 	reconnectInterval time.Duration
 }
 
 // NewWebSocketClient creates a new WebSocket client
-func NewWebSocketClient(agentId, agentKey, coreURL string, onConfig func(*Config), onBan func(BanInfo)) *WebSocketClient {
+func NewWebSocketClient(agentId, agentKey, coreURL string, onConfig func(*Config), onBan func(BanInfo), onBanSync func([]BanInfo)) *WebSocketClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WebSocketClient{
 		agentId:           agentId,
@@ -66,6 +67,7 @@ func NewWebSocketClient(agentId, agentKey, coreURL string, onConfig func(*Config
 		cancel:            cancel,
 		onConfig:          onConfig,
 		onBan:             onBan,
+		onBanSync:         onBanSync,
 		reconnectInterval: 5 * time.Second,
 	}
 }
@@ -216,10 +218,11 @@ func (w *WebSocketClient) processMessage(data []byte) error {
 			return fmt.Errorf("unmarshal ban_sync error: %w", err)
 		}
 
-		log.Printf("[WebSocket] Received ban sync with %d bans", banSync.Total)
-
-		// Forward to ban handler if set
-		if w.onBan != nil {
+		// Use onBanSync callback for full sync (handles new bans and unbans)
+		if w.onBanSync != nil {
+			w.onBanSync(banSync.Bans)
+		} else if w.onBan != nil {
+			// Fallback: forward to individual ban handler
 			for _, ban := range banSync.Bans {
 				w.onBan(ban)
 			}
