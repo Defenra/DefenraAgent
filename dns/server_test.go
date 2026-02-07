@@ -33,6 +33,10 @@ func (m *MockConfigManager) GetAgentIP() string {
 	return m.agentIP
 }
 
+func (m *MockConfigManager) GetAgents() []config.FallbackAgentInfo {
+	return []config.FallbackAgentInfo{}
+}
+
 func TestCNAMEFlattening(t *testing.T) {
 	tests := []struct {
 		name           string

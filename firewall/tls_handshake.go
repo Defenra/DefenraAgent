@@ -259,7 +259,7 @@ func GetConfigForClientWrapper(
 	baseConfig *tls.Config,
 	configuredDomains []string,
 	getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error),
-	tlsFingerprintEnabled bool,
+	isTLSEnabledForDomainFunc func(domain string) bool,
 ) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 
 	handshakeLimiter := GetHandshakeRateLimiter()
@@ -269,7 +269,7 @@ func GetConfigForClientWrapper(
 		ip := ExtractIPFromAddr(hello.Conn.RemoteAddr())
 
 		// === FORTRESS LAYER 1: SNI Validation (Cheap Check) ===
-		// Отсекаем сканеры и боты без валидного SNI
+		// Отсекаем сканеры и ботов без валидного SNI
 		if err := ValidateSNI(hello.ServerName, configuredDomains); err != nil {
 			// Логируем с указанием настроенных доменов для отладки
 			log.Printf("[TLS-Fortress] Blocked handshake from %s: %v (SNI: %s, configured domains: %d)",
@@ -308,7 +308,13 @@ func GetConfigForClientWrapper(
 		}
 
 		// === FORTRESS LAYER 3: TLS Fingerprinting (JA3/JA4) ===
-		// Анализ TLS fingerprint для обнаружения ботов (только если включено в настройках)
+		// Анализ TLS fingerprint для обнаружения ботов (только если включено для конкретного домена)
+		// Проверяем динамически для каждого домена, а не глобально
+		tlsFingerprintEnabled := false
+		if isTLSEnabledForDomainFunc != nil && hello.ServerName != "" {
+			tlsFingerprintEnabled = isTLSEnabledForDomainFunc(hello.ServerName)
+		}
+
 		if tlsFingerprintEnabled {
 			tlsFingerprint := ExtractTLSFingerprint(hello)
 			if tlsFingerprint != "" {
