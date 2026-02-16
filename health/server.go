@@ -79,8 +79,8 @@ func StartHealthCheck(configMgr *config.ConfigManager) {
 	http.HandleFunc("/banned-ips", server.handleBannedIPs)
 	http.HandleFunc("/clients", server.handleClients)
 
-	log.Println("[Health] Starting health check server on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Println("[Health] Starting health check server on 127.0.0.1:8080")
+	if err := http.ListenAndServe("127.0.0.1:8080", nil); err != nil {
 		log.Printf("[Health] Failed to start server: %v", err)
 	}
 }
